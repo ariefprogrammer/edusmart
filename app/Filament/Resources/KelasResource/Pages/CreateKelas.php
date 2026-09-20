@@ -1,0 +1,20 @@
+<?php
+
+namespace App\Filament\Resources\KelasResource\Pages;
+
+use App\Filament\Resources\KelasResource;
+use Filament\Resources\Pages\CreateRecord;
+
+class CreateKelas extends CreateRecord
+{
+    protected static string $resource = KelasResource::class;
+
+    protected function mutateFormDataBeforeCreate(array $data): array
+    {
+        if (! auth()->user()->hasRole('super_admin')) {
+            $data['cabang_id'] = auth()->user()->cabang->first()?->id;
+        }
+
+        return $data;
+    }
+}
