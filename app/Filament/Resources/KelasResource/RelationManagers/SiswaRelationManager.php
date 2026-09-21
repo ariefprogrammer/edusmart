@@ -65,7 +65,7 @@ class SiswaRelationManager extends RelationManager
             ])
             ->actions([
                 Tables\Actions\EditAction::make()
-                    ->label('Ubah Status')
+                    ->label('Update / CRM')
                     ->modalHeading(fn ($record) => 'Ubah Status — ' . $record->nama)
                     ->modalWidth('lg')
                     ->form([
@@ -78,7 +78,7 @@ class SiswaRelationManager extends RelationManager
                                     ->inline(false),
 
                                 Forms\Components\DatePicker::make('tanggal_perubahan')
-                                    ->label('Tanggal Perubahan')
+                                    ->label('Tanggal')
                                     ->native(false)
                                     ->default(now())
                                     ->required(),
@@ -111,7 +111,7 @@ class SiswaRelationManager extends RelationManager
                     ->modalCancelActionLabel('Tutup'),
 
                 Tables\Actions\DetachAction::make()
-                    ->label('Keluarkan dari Program'),
+                    ->label('Keluarkan'),
             ])
             ->bulkActions([
                 Tables\Actions\DetachBulkAction::make(),
