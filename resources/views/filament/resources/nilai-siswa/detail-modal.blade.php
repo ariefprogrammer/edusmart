@@ -1,0 +1,1 @@
+@livewire('nilai-siswa-detail', ['siswaId' => $siswaId], key('nilai-siswa-detail-' . $siswaId))

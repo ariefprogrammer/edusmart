@@ -33,7 +33,7 @@
     </div>
 
     @unless($isGuruPengampu)
-        <div class="mb-4 text-xs px-3 py-2 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+        <div class="text-xs px-3 py-2 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
             Mode lihat saja — hanya guru yang ditugaskan di program ini yang bisa mengubah data.
         </div>
     @endunless

@@ -7,9 +7,12 @@ use App\Filament\Resources\NilaiSiswaResource\RelationManagers;
 use App\Models\NilaiSiswa;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
+use Filament\Forms\Components\Select;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Filament\Tables\Filters\SelectFilter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use App\Models\Concerns\ScopedToCabang;
@@ -26,47 +29,124 @@ class NilaiSiswaResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\TextInput::make('cabang_id')
+                Select::make('cabang_id')
+                    ->relationship('cabang', 'nama_cabang')
+                    ->searchable()
+                    ->preload()
                     ->required()
-                    ->numeric(),
-                Forms\Components\Select::make('kelas_id')
-                    ->relationship('kelas', 'id')
-                    ->default(null),
-                Forms\Components\Select::make('siswa_id')
-                    ->relationship('siswa', 'id')
-                    ->default(null),
-                Forms\Components\Select::make('guru_id')
-                    ->relationship('guru', 'id')
-                    ->default(null),
-                Forms\Components\Select::make('kategori_nilai_id')
-                    ->relationship('kategoriNilai', 'id')
+                    ->live()
+                    ->visible(fn () => auth()->user()->hasRole('super_admin'))
+                    ->default(fn () => auth()->user()->cabang->first()?->id)
+                    ->dehydrated(),
+
+                Select::make('kelas_id')
+                    ->label('Kelas / Program')
+                    ->relationship(
+                        'kelas',
+                        'nama_kelas',
+                        modifyQueryUsing: fn (Builder $query, Get $get) => $query
+                            ->where('cabang_id', $get('cabang_id') ?? auth()->user()->cabang->first()?->id),
+                    )
+                    ->searchable()
+                    ->preload()
                     ->required(),
+
+                Select::make('siswa_id')
+                    ->relationship(
+                        'siswa',
+                        'nama',
+                        modifyQueryUsing: fn (Builder $query, Get $get) => $query
+                            ->where('cabang_id', $get('cabang_id') ?? auth()->user()->cabang->first()?->id),
+                    )
+                    ->searchable()
+                    ->preload()
+                    ->required(),
+
+                Select::make('guru_id')
+                    ->relationship(
+                        'guru',
+                        'nama',
+                        modifyQueryUsing: fn (Builder $query, Get $get) => $query
+                            ->where('cabang_id', $get('cabang_id') ?? auth()->user()->cabang->first()?->id),
+                    )
+                    ->searchable()
+                    ->preload()
+                    ->required(),
+
+                Select::make('kategori_nilai_id')
+                    ->label('Kategori Nilai')
+                    ->relationship('kategoriNilai', 'nama_kategori')
+                    ->searchable()
+                    ->preload()
+                    ->required(),
+
                 Forms\Components\TextInput::make('nilai')
                     ->numeric()
-                    ->default(null),
-            ]);
+                    ->required(),
+            ])
+            ->columns(2);
     }
 
     public static function table(Table $table): Table
     {
         return $table
+            // Satu baris per siswa — ambil nilai dengan id terbesar sebagai representasi.
+            ->modifyQueryUsing(fn (Builder $query) => $query->whereIn(
+                'id',
+                NilaiSiswa::query()->selectRaw('MAX(id)')->groupBy('siswa_id')
+            ))
+            ->recordUrl(null)
+            ->recordAction('detail')
             ->columns([
-                Tables\Columns\TextColumn::make('siswa.nama')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('kelas.nama_kelas')->label('Program'),
-                Tables\Columns\TextColumn::make('kategoriNilai.nama_kategori')->label('Kategori'),
-                Tables\Columns\TextColumn::make('nilai')->sortable(),
-                Tables\Columns\TextColumn::make('guru.nama')->label('Guru'),
+                Tables\Columns\TextColumn::make('cabang.nama_cabang')
+                    ->label('Cabang')
+                    ->searchable()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('siswa.nama')
+                    ->label('Siswa')
+                    ->searchable()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('jumlah_nilai')
+                    ->label('Jumlah Catatan')
+                    ->getStateUsing(
+                        fn (NilaiSiswa $record) => NilaiSiswa::query()
+                            ->where('siswa_id', $record->siswa_id)
+                            ->count()
+                    ),
+                Tables\Columns\TextColumn::make('rata_rata')
+                    ->label('Rata-rata Nilai')
+                    ->getStateUsing(
+                        fn (NilaiSiswa $record) => round(
+                            NilaiSiswa::query()
+                                ->where('siswa_id', $record->siswa_id)
+                                ->avg('nilai') ?? 0,
+                            1
+                        )
+                    ),
             ])
             ->filters([
-                //
+                SelectFilter::make('cabang_id')
+                    ->label('Cabang')
+                    ->relationship('cabang', 'nama_cabang')
+                    ->searchable()
+                    ->preload()
+                    ->visible(fn () => auth()->user()->hasRole('super_admin')),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\Action::make('detail')
+                    ->label('Detail')
+                    ->icon('heroicon-o-eye')
+                    ->color('gray')
+                    ->modalHeading(fn (NilaiSiswa $record) => 'Detail Nilai — ' . ($record->siswa?->nama ?? '-'))
+                    ->modalContent(fn (NilaiSiswa $record) => view('filament.resources.nilai-siswa.detail-modal', [
+                        'siswaId' => $record->siswa_id,
+                    ]))
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Tutup')
+                    ->modalWidth('4xl'),
             ])
             ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
+                //
             ]);
     }
 

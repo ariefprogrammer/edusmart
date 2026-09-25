@@ -35,4 +35,9 @@ class NilaiSiswa extends Model
     {
         return $this->belongsTo(Periode::class);
     }
+
+    public function cabang()
+    {
+        return $this->belongsTo(Cabang::class);
+    }
 }
