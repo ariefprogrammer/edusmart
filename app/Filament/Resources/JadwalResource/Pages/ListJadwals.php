@@ -5,6 +5,7 @@ namespace App\Filament\Resources\JadwalResource\Pages;
 use App\Filament\Resources\JadwalResource;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
+use Livewire\Attributes\On;
 
 class ListJadwals extends ListRecords
 {
@@ -15,5 +16,12 @@ class ListJadwals extends ListRecords
         return [
             Actions\CreateAction::make(),
         ];
+    }
+
+    #[On('jadwal-kelas-updated')]
+    public function refreshTable(): void
+    {
+        // Kosong secara sengaja — cukup memicu re-render halaman List
+        // (termasuk tabelnya) saat event diterima dari JadwalKelasDetail.
     }
 }

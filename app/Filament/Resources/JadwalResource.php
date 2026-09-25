@@ -94,6 +94,13 @@ class JadwalResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            // Satu baris per kelas/program — ambil jadwal dengan id terbesar sebagai representasi.
+            ->modifyQueryUsing(fn (Builder $query) => $query->whereIn(
+                'id',
+                Jadwal::query()->selectRaw('MAX(id)')->groupBy('kelas_id')
+            ))
+            ->recordUrl(null)
+            ->recordAction('detail')
             ->columns([
                 Tables\Columns\TextColumn::make('cabang.nama_cabang')
                     ->label('Cabang')
@@ -103,18 +110,22 @@ class JadwalResource extends Resource
                     ->label('Kelas / Program')
                     ->searchable()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('guru.nama')
-                    ->label('Guru')
-                    ->searchable()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('hari')
-                    ->label('Hari'),
-                Tables\Columns\TextColumn::make('jam_mulai')
-                    ->label('Jam Mulai')
-                    ->time('H:i'),
-                Tables\Columns\TextColumn::make('jam_selesai')
-                    ->label('Jam Selesai')
-                    ->time('H:i'),
+                Tables\Columns\TextColumn::make('jumlah_jadwal')
+                    ->label('Jumlah Hari Terjadwal')
+                    ->getStateUsing(
+                        fn (Jadwal $record) => Jadwal::query()
+                            ->where('kelas_id', $record->kelas_id)
+                            ->count()
+                    ),
+                Tables\Columns\IconColumn::make('ada_aktif')
+                    ->label('Ada Jadwal Aktif')
+                    ->boolean()
+                    ->getStateUsing(
+                        fn (Jadwal $record) => Jadwal::query()
+                            ->where('kelas_id', $record->kelas_id)
+                            ->where('is_active', true)
+                            ->exists()
+                    ),
             ])
             ->filters([
                 SelectFilter::make('cabang_id')
@@ -125,13 +136,20 @@ class JadwalResource extends Resource
                     ->visible(fn () => auth()->user()->hasRole('super_admin')),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\Action::make('detail')
+                    ->label('Detail')
+                    ->icon('heroicon-o-eye')
+                    ->color('gray')
+                    ->modalHeading(fn (Jadwal $record) => 'Detail Jadwal — ' . ($record->kelas?->nama_kelas ?? '-'))
+                    ->modalContent(fn (Jadwal $record) => view('filament.resources.jadwal.detail-modal', [
+                        'kelasId' => $record->kelas_id,
+                    ]))
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Tutup')
+                    ->modalWidth('4xl'),
             ])
             ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
+                //
             ]);
     }
 
