@@ -1,1 +1,1 @@
-@livewire('jadwal-guru-detail', ['userId' => $userId], key('jadwal-guru-detail-' . $userId))
+@livewire('jadwal-karyawan-detail', ['userId' => $userId], key('jadwal-karyawan-detail-' . $userId))

@@ -4,10 +4,9 @@ namespace App\Livewire;
 
 use App\Models\JadwalClock;
 use Filament\Notifications\Notification;
-use Livewire\Attributes\On;
 use Livewire\Component;
 
-class JadwalGuruDetail extends Component
+class JadwalKaryawanDetail extends Component
 {
     public int $userId;
 
@@ -81,12 +80,11 @@ class JadwalGuruDetail extends Component
             ->success()
             ->send();
 
-        // Beritahu tabel utama (ListJadwalClocks) untuk refresh datanya.
         $this->dispatch('jadwal-updated');
     }
 
     public function render()
     {
-        return view('livewire.jadwal-guru-detail');
+        return view('livewire.jadwal-karyawan-detail');
     }
 }

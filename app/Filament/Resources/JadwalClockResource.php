@@ -105,6 +105,8 @@ class JadwalClockResource extends Resource
                 'id',
                 JadwalClock::query()->selectRaw('MAX(id)')->groupBy('user_id')
             ))
+            ->recordUrl(null)
+            ->recordAction('detail')
             ->columns([
                 Tables\Columns\TextColumn::make('cabang.nama_cabang')
                     ->label('Cabang')
