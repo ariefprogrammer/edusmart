@@ -67,7 +67,7 @@ class JadwalClockResource extends Resource
                         ->columns(7)
                         ->columnSpanFull()
                         ->required()
-                        ->helperText('Pilih satu atau lebih hari sekaligus — jadwal clock-in/out yang sama akan dibuat untuk tiap hari yang dicentang.')
+                        ->helperText('Pilih satu atau banyak hari sekaligus — jadwal clock-in/out yang sama akan dibuat untuk tiap hari yang dicentang.')
                         ->visible(fn (string $operation) => $operation === 'create'),
 
                     Select::make('hari')
