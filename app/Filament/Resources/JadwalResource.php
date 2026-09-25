@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Filament\Forms\Get;
 use Filament\Forms\Components\Select;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Support\Enums\Alignment;
 use App\Models\Concerns\ScopedToCabang;
 
 class JadwalResource extends Resource
@@ -112,6 +113,7 @@ class JadwalResource extends Resource
                     ->sortable(),
                 Tables\Columns\TextColumn::make('jumlah_jadwal')
                     ->label('Jumlah Hari Terjadwal')
+                    ->alignment(Alignment::Center)
                     ->getStateUsing(
                         fn (Jadwal $record) => Jadwal::query()
                             ->where('kelas_id', $record->kelas_id)
@@ -120,6 +122,7 @@ class JadwalResource extends Resource
                 Tables\Columns\IconColumn::make('ada_aktif')
                     ->label('Ada Jadwal Aktif')
                     ->boolean()
+                    ->alignment(Alignment::Center)
                     ->getStateUsing(
                         fn (Jadwal $record) => Jadwal::query()
                             ->where('kelas_id', $record->kelas_id)

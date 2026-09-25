@@ -17,6 +17,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TimePicker;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Get;
+use Filament\Support\Enums\Alignment;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Tables\Filters\SelectFilter;
 
@@ -118,6 +119,7 @@ class JadwalClockResource extends Resource
                     ->sortable(),
                 Tables\Columns\TextColumn::make('jumlah_hari')
                     ->label('Jumlah Hari Terjadwal')
+                    ->alignment(Alignment::Center)
                     ->getStateUsing(
                         fn (JadwalClock $record) => JadwalClock::query()
                             ->where('user_id', $record->user_id)
@@ -126,6 +128,7 @@ class JadwalClockResource extends Resource
                 Tables\Columns\IconColumn::make('ada_aktif')
                     ->label('Ada Jadwal Aktif')
                     ->boolean()
+                    ->alignment(Alignment::Center)
                     ->getStateUsing(
                         fn (JadwalClock $record) => JadwalClock::query()
                             ->where('user_id', $record->user_id)

@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Filament\Forms\Components\Select;
 use App\Models\Concerns\ScopedToCabang;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Support\Enums\Alignment;
 use App\Filament\Resources\KelasResource\RelationManagers\SiswaRelationManager;
 
 class KelasResource extends Resource
@@ -73,6 +74,7 @@ class KelasResource extends Resource
                     ->label('Nama Kelas / Program')
                     ->searchable(),
                 Tables\Columns\IconColumn::make('is_active')
+                    ->alignment(Alignment::Center)
                     ->boolean(),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
