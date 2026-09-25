@@ -1,0 +1,1 @@
+@livewire('jadwal-guru-detail', ['userId' => $userId], key('jadwal-guru-detail-' . $userId))

@@ -100,12 +100,36 @@ class JadwalClockResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            // Satu baris per guru — ambil jadwal dengan id terbesar sebagai representasi.
+            ->modifyQueryUsing(fn (Builder $query) => $query->whereIn(
+                'id',
+                JadwalClock::query()->selectRaw('MAX(id)')->groupBy('user_id')
+            ))
             ->columns([
-                Tables\Columns\TextColumn::make('user.name')->label('Karyawan')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('hari'),
-                Tables\Columns\TextColumn::make('clock_in')->time('H:i'),
-                Tables\Columns\TextColumn::make('clock_out')->time('H:i'),
-                Tables\Columns\IconColumn::make('is_active')->boolean(),
+                Tables\Columns\TextColumn::make('cabang.nama_cabang')
+                    ->label('Cabang')
+                    ->searchable()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('user.name')
+                    ->label('Karyawan')
+                    ->searchable()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('jumlah_hari')
+                    ->label('Jumlah Hari Terjadwal')
+                    ->getStateUsing(
+                        fn (JadwalClock $record) => JadwalClock::query()
+                            ->where('user_id', $record->user_id)
+                            ->count()
+                    ),
+                Tables\Columns\IconColumn::make('ada_aktif')
+                    ->label('Ada Jadwal Aktif')
+                    ->boolean()
+                    ->getStateUsing(
+                        fn (JadwalClock $record) => JadwalClock::query()
+                            ->where('user_id', $record->user_id)
+                            ->where('is_active', true)
+                            ->exists()
+                    ),
             ])
             ->filters([
                 SelectFilter::make('cabang_id')
@@ -116,8 +140,17 @@ class JadwalClockResource extends Resource
                     ->visible(fn () => auth()->user()->hasRole('super_admin')),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\Action::make('detail')
+                    ->label('Detail')
+                    ->icon('heroicon-o-eye')
+                    ->color('gray')
+                    ->modalHeading(fn (JadwalClock $record) => 'Detail Jadwal — ' . ($record->user?->name ?? '-'))
+                    ->modalContent(fn (JadwalClock $record) => view('filament.resources.jadwal-clock.detail-modal', [
+                        'userId' => $record->user_id,
+                    ]))
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Tutup')
+                    ->modalWidth('3xl'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
