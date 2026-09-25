@@ -149,7 +149,8 @@ class PresensiKaryawanResource extends Resource
                     ->label('Cabang')
                     ->relationship('cabang', 'nama_cabang')
                     ->searchable()
-                    ->preload(),
+                    ->preload()
+                    ->visible(fn () => ! static::isCabangRestricted()),
 
                 SelectFilter::make('user_id')
                     ->label('Karyawan')

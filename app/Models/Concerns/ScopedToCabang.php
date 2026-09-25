@@ -10,12 +10,22 @@ trait ScopedToCabang
     {
         $query = parent::getEloquentQuery();
 
-        $user = auth()->user();
-
-        if ($user && ! $user->hasRole('super_admin')) {
-            $query->whereIn('cabang_id', $user->cabang->pluck('id'));
+        if (static::isCabangRestricted()) {
+            $query->whereIn('cabang_id', static::getScopedCabangIds());
         }
 
         return $query;
+    }
+
+    public static function isCabangRestricted(): bool
+    {
+        $user = auth()->user();
+
+        return $user && ! $user->hasRole('super_admin');
+    }
+
+    public static function getScopedCabangIds(): array
+    {
+        return auth()->user()?->cabang->pluck('id')->toArray() ?? [];
     }
 }
