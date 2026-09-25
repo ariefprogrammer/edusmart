@@ -220,7 +220,7 @@ class ReportSiswaResource extends Resource
 
             Forms\Components\Textarea::make('catatan')
                 ->label('Catatan (opsional)')
-                ->helperText('Dicantumkan di semua report yang dibuat.')
+                ->helperText('Berikan label pada setiap raport agar lebih mudah untuk pencarian. Dicantumkan di semua report yang dibuat.')
                 ->rows(2)
                 ->maxLength(1000)
                 ->columnSpanFull(),
@@ -561,13 +561,14 @@ class ReportSiswaResource extends Resource
                         ->map(fn ($b) => ReportSiswa::BAGIAN[$b] ?? $b)
                         ->all()),
 
-                Tables\Columns\TextColumn::make('periode_ringkasan')
-                    ->label('Periode')
-                    ->wrap(),
-
                 Tables\Columns\TextColumn::make('generated_by_nama')
                     ->label('Dibuat oleh')
                     ->toggleable(),
+                
+                Tables\Columns\TextColumn::make('catatan')
+                    ->label('Catatan')
+                    ->searchable()
+                    ->sortable(),
 
                 Tables\Columns\TextColumn::make('generated_at')
                     ->label('Dibuat pada')

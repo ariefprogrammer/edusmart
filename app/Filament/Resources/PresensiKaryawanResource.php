@@ -179,6 +179,8 @@ class PresensiKaryawanResource extends Resource
                         Forms\Components\DatePicker::make('tanggal_sampai')
                             ->label('Sampai Tanggal'),
                     ])
+                    ->columns(2)
+                    ->columnSpan(2)
                     ->query(function (Builder $query, array $data): Builder {
                         return $query
                             ->when(

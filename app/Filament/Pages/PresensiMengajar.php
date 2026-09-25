@@ -88,7 +88,7 @@ class PresensiMengajar extends Page implements HasTable
         }
 
         $batas = Carbon::parse($jadwal->jam_mulai)->addMinutes($cabang->toleransi_keterlambatan_menit);
-        $statusMasuk = now()->format('H:i:s') <= $batas->format('H:i:s') ? 'tepat_waktu' : 'terlambat';
+        $statusMasuk = now()->format('H:i:s') <= $batas->format('H:i:s') ? 'hadir' : 'terlambat';
 
         PresensiJadwal::updateOrCreate(
             ['jadwal_id' => $jadwal->id, 'tanggal' => today()],
@@ -158,15 +158,23 @@ class PresensiMengajar extends Page implements HasTable
                     ->label('Check In')
                     ->time('H:i'),
                 Tables\Columns\BadgeColumn::make('status_masuk')
-                    ->label('Status')
+                    ->label('Status Masuk')
                     ->colors([
-                        'success' => 'tepat_waktu',
+                        'success' => 'hadir',
                         'danger' => 'terlambat',
                     ])
                     ->placeholder('-'),
                 Tables\Columns\TextColumn::make('check_out')
                     ->label('Check Out')
                     ->time('H:i'),
+                Tables\Columns\BadgeColumn::make('status_keluar')
+                    ->label('Status Keluar')
+                    ->colors([
+                        'success' => 'pulang',
+                        'warning' => 'bolos',
+                        'danger' => 'tidak_checkout',
+                    ])
+                    ->placeholder('-'),
             ])
             ->filters([
                 Tables\Filters\Filter::make('tanggal')
