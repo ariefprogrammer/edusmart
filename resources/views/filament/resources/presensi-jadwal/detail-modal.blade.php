@@ -1,0 +1,1 @@
+@livewire('presensi-jadwal-detail', ['kelasId' => $kelasId], key('presensi-jadwal-detail-' . $kelasId))
