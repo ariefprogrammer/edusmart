@@ -1,9 +1,24 @@
 <x-filament-panels::page.simple>
     <style>
-        .fi-simple-main {
+        main:has(.login-split) {
+            width: 100% !important;
             max-width: 60rem !important;
             padding: 0 !important;
             overflow: hidden;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, .35) !important;
+        }
+        .fi-simple-layout {
+            background-color: rgb(var(--gray-900));
+            background-image:
+                linear-gradient(rgba(15, 23, 42, .45), rgba(15, 23, 42, .45)),
+                url('{{ asset('images/login-bg.png') }}');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+
+        .fi-simple-main {
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, .35) !important;
         }
 
         .login-split {
