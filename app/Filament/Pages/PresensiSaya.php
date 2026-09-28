@@ -28,6 +28,8 @@ class PresensiSaya extends Page implements HasForms, HasTable
     protected static ?string $navigationLabel = 'Presensi Saya';
     protected static ?string $title = 'Presensi Saya';
     protected static string $view = 'filament.pages.presensi-saya';
+    protected static ?string $navigationGroup = 'Penugasan & Presensi';
+    protected static ?int $navigationSort = 11;
 
     protected const MAX_ACCURACY_METER = 1000;
 

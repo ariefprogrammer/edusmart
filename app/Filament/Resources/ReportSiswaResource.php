@@ -46,6 +46,8 @@ class ReportSiswaResource extends Resource
     protected static ?string $modelLabel = 'Report Siswa';
 
     protected static ?string $pluralModelLabel = 'Report Siswa';
+    protected static ?string $navigationGroup = 'Manajemen Siswa';
+    protected static ?int $navigationSort = 16;
     
     /** Batas siswa per sekali "Buat Report" (proses berjalan sinkron). */
     public const BATCH_MAKS = 100;

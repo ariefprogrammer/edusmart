@@ -21,6 +21,8 @@ class CabangResource extends Resource
     protected static ?string $model = Cabang::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-building-office';
+    protected static ?string $navigationGroup = 'Master Data';
+    protected static ?int $navigationSort = 2;
 
     public static function form(Form $form): Form
     {

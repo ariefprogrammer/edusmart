@@ -24,6 +24,8 @@ class KelasResource extends Resource
 
     protected static ?string $model = Kelas::class;
     protected static ?string $navigationIcon = 'heroicon-o-rectangle-group';
+    protected static ?string $navigationGroup = 'Master Data';
+    protected static ?int $navigationSort = 6;
 
     // Menu
     protected static ?string $navigationLabel = 'Kelas / Program';

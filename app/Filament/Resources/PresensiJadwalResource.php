@@ -25,6 +25,8 @@ class PresensiJadwalResource extends Resource
     protected static ?string $model = PresensiJadwal::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-check';
+    protected static ?string $navigationGroup = 'Penugasan & Presensi';
+    protected static ?int $navigationSort = 8;
 
     public static function form(Form $form): Form
     {

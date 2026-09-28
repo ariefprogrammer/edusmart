@@ -16,6 +16,8 @@ class LaporanPresensiSiswa extends Page
     protected static ?string $navigationLabel = 'Laporan Presensi Siswa';
     protected static ?string $title = 'Laporan Presensi Siswa';
     protected static string $view = 'filament.pages.laporan-presensi-siswa';
+    protected static ?string $navigationGroup = 'Manajemen Siswa';
+    protected static ?int $navigationSort = 15;
 
     public string $dateStart;
     public string $dateEnd;

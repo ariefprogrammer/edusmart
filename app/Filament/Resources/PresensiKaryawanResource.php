@@ -29,6 +29,8 @@ class PresensiKaryawanResource extends Resource
     protected static ?string $model = PresensiKaryawan::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-identification';
+    protected static ?string $navigationGroup = 'Penugasan & Presensi';
+    protected static ?int $navigationSort = 10;
 
     public static function form(Form $form): Form
     {

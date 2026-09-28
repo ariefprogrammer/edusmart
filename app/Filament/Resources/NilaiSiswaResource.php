@@ -24,6 +24,8 @@ class NilaiSiswaResource extends Resource
     protected static ?string $model = NilaiSiswa::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationGroup = 'Manajemen Siswa';
+    protected static ?int $navigationSort = 13;
 
     public static function form(Form $form): Form
     {

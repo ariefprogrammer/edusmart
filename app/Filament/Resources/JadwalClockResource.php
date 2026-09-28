@@ -28,6 +28,8 @@ class JadwalClockResource extends Resource
     protected static ?string $model = JadwalClock::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-calendar-days';
+    protected static ?string $navigationGroup = 'Penugasan & Presensi';
+    protected static ?int $navigationSort = 9;
 
     public static function form(Form $form): Form
     {

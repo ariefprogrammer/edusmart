@@ -29,6 +29,8 @@ class JadwalResource extends Resource
 
     // Label
     protected static ?string $pluralModelLabel = 'Jadwal Kelas / Program';
+    protected static ?string $navigationGroup = 'Penugasan & Presensi';
+    protected static ?int $navigationSort = 7;
 
     // Tombol create
     protected static ?string $modelLabel = 'Jadwal';

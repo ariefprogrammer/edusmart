@@ -77,9 +77,7 @@ return [
         ],
 
         'resources' => [
-            'role' => [
-                'enabled' => true,
-            ],
+            'RoleResource' => App\Filament\Resources\RoleResource::class,
         ],
     ],
 
