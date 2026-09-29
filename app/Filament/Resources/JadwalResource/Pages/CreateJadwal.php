@@ -3,8 +3,9 @@
 namespace App\Filament\Resources\JadwalResource\Pages;
 
 use App\Filament\Resources\JadwalResource;
-use Filament\Actions;
+use App\Models\Jadwal;
 use Filament\Resources\Pages\CreateRecord;
+use Illuminate\Database\Eloquent\Model;
 
 class CreateJadwal extends CreateRecord
 {
@@ -17,5 +18,25 @@ class CreateJadwal extends CreateRecord
         }
 
         return $data;
+    }
+
+    protected function handleRecordCreation(array $data): Model
+    {
+        $hariList = $data['hari_list'] ?? [];
+        unset($data['hari_list']);
+
+        $records = collect($hariList)->map(
+            fn (string $hari) => Jadwal::updateOrCreate(
+                [
+                    'kelas_id' => $data['kelas_id'],
+                    'hari' => $hari,
+                    'guru_id' => $data['guru_id'],
+                    'jam_mulai' => $data['jam_mulai'],
+                ],
+                [...$data, 'hari' => $hari],
+            )
+        );
+
+        return $records->first();
     }
 }

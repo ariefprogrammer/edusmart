@@ -72,12 +72,31 @@ class JadwalResource extends Resource
                     ->preload()
                     ->required(),
 
-                Forms\Components\Select::make('hari')
-                    ->options([
-                        'Senin' => 'Senin', 'Selasa' => 'Selasa', 'Rabu' => 'Rabu',
-                        'Kamis' => 'Kamis', 'Jumat' => 'Jumat', 'Sabtu' => 'Sabtu', 'Minggu' => 'Minggu',
-                    ])
-                    ->required(),
+                Forms\Components\Fieldset::make('Pilihan Hari')
+                ->schema([
+                    Forms\Components\CheckboxList::make('hari_list')
+                        ->label('')
+                        ->options([
+                            'Senin' => 'Senin', 'Selasa' => 'Selasa', 'Rabu' => 'Rabu',
+                            'Kamis' => 'Kamis', 'Jumat' => 'Jumat', 'Sabtu' => 'Sabtu', 'Minggu' => 'Minggu',
+                        ])
+                        ->columns(7)
+                        ->columnSpanFull()
+                        ->required()
+                        ->helperText('Pilih satu atau banyak hari sekaligus — jadwal dengan guru, jam mulai, dan jam selesai yang sama akan dibuat untuk tiap hari yang dicentang.')
+                        ->visible(fn (string $operation) => $operation === 'create'),
+
+                    Forms\Components\Select::make('hari')
+                        ->label('')
+                        ->options([
+                            'Senin' => 'Senin', 'Selasa' => 'Selasa', 'Rabu' => 'Rabu',
+                            'Kamis' => 'Kamis', 'Jumat' => 'Jumat', 'Sabtu' => 'Sabtu', 'Minggu' => 'Minggu',
+                        ])
+                        ->required()
+                        ->columnSpanFull()
+                        ->visible(fn (string $operation) => $operation === 'edit'),
+                ])
+                ->columnSpanFull(),
 
                 Forms\Components\TimePicker::make('jam_mulai')
                     ->seconds(false)
