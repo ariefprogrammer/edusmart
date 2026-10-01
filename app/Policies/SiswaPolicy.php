@@ -15,7 +15,7 @@ class SiswaPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->can('view_any_siswa');
+        return $user->can('view_any_jadwal::siswa');
     }
 
     /**
@@ -23,7 +23,7 @@ class SiswaPolicy
      */
     public function view(User $user, Siswa $siswa): bool
     {
-        return $user->can('view_siswa');
+        return $user->can('view_jadwal::siswa');
     }
 
     /**
@@ -31,7 +31,7 @@ class SiswaPolicy
      */
     public function create(User $user): bool
     {
-        return $user->can('create_siswa');
+        return $user->can('create_jadwal::siswa');
     }
 
     /**
@@ -39,7 +39,7 @@ class SiswaPolicy
      */
     public function update(User $user, Siswa $siswa): bool
     {
-        return $user->can('update_siswa');
+        return $user->can('update_jadwal::siswa');
     }
 
     /**
@@ -47,7 +47,7 @@ class SiswaPolicy
      */
     public function delete(User $user, Siswa $siswa): bool
     {
-        return $user->can('delete_siswa');
+        return $user->can('delete_jadwal::siswa');
     }
 
     /**
@@ -55,7 +55,7 @@ class SiswaPolicy
      */
     public function deleteAny(User $user): bool
     {
-        return $user->can('delete_any_siswa');
+        return $user->can('delete_any_jadwal::siswa');
     }
 
     /**
@@ -63,7 +63,7 @@ class SiswaPolicy
      */
     public function forceDelete(User $user, Siswa $siswa): bool
     {
-        return $user->can('force_delete_siswa');
+        return $user->can('force_delete_jadwal::siswa');
     }
 
     /**
@@ -71,7 +71,7 @@ class SiswaPolicy
      */
     public function forceDeleteAny(User $user): bool
     {
-        return $user->can('force_delete_any_siswa');
+        return $user->can('force_delete_any_jadwal::siswa');
     }
 
     /**
@@ -79,7 +79,7 @@ class SiswaPolicy
      */
     public function restore(User $user, Siswa $siswa): bool
     {
-        return $user->can('restore_siswa');
+        return $user->can('restore_jadwal::siswa');
     }
 
     /**
@@ -87,7 +87,7 @@ class SiswaPolicy
      */
     public function restoreAny(User $user): bool
     {
-        return $user->can('restore_any_siswa');
+        return $user->can('restore_any_jadwal::siswa');
     }
 
     /**
@@ -95,7 +95,7 @@ class SiswaPolicy
      */
     public function replicate(User $user, Siswa $siswa): bool
     {
-        return $user->can('replicate_siswa');
+        return $user->can('replicate_jadwal::siswa');
     }
 
     /**
@@ -103,6 +103,6 @@ class SiswaPolicy
      */
     public function reorder(User $user): bool
     {
-        return $user->can('reorder_siswa');
+        return $user->can('reorder_jadwal::siswa');
     }
 }
