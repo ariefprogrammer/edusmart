@@ -26,4 +26,9 @@ class Dashboard extends BaseDashboard
                 ->join(', '),
         ];
     }
+
+    public function getColumns(): int|array
+    {
+        return 3;
+    }
 }

@@ -38,8 +38,12 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([
-                Widgets\AccountWidget::class,
-                Widgets\FilamentInfoWidget::class,
+                // Widgets\AccountWidget::class,
+                // Widgets\FilamentInfoWidget::class,
+                \App\Filament\Widgets\SuperAdminStatsWidget::class,
+                \App\Filament\Widgets\PresensiSiswaHariIniChart::class,
+                \App\Filament\Widgets\PresensiGuruHariIniChart::class,
+                \App\Filament\Widgets\PresensiKaryawanHariIniChart::class,
             ])
             ->middleware([
                 EncryptCookies::class,
