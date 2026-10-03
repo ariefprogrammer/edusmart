@@ -29,11 +29,11 @@ class SuperAdminStatsWidget extends BaseWidget
                 ->icon('heroicon-o-building-office')
                 ->color('primary'),
 
-            Stat::make('Siswa Aktif', Siswa::where('status', 'aktif')->count())
+            Stat::make('Siswa Aktif', Siswa::where('is_active', true)->count())
                 ->icon('heroicon-o-academic-cap')
                 ->color('success'),
 
-            Stat::make('Siswa Non-aktif', Siswa::where('status', 'non_aktif')->count())
+            Stat::make('Siswa Non-aktif', Siswa::where('is_active', false)->count())
                 ->icon('heroicon-o-user-minus')
                 ->color('danger'),
 
