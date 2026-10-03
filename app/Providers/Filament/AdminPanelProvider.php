@@ -44,6 +44,10 @@ class AdminPanelProvider extends PanelProvider
                 \App\Filament\Widgets\PresensiSiswaHariIniChart::class,
                 \App\Filament\Widgets\PresensiGuruHariIniChart::class,
                 \App\Filament\Widgets\PresensiKaryawanHariIniChart::class,
+                \App\Filament\Widgets\AdminCabangStatsWidget::class,
+                \App\Filament\Widgets\PresensiSiswaMingguIniChart::class,
+                \App\Filament\Widgets\PresensiGuruMingguIniChartCabang::class,
+                \App\Filament\Widgets\PresensiKaryawanMingguIniChartCabang::class,
             ])
             ->middleware([
                 EncryptCookies::class,
