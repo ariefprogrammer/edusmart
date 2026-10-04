@@ -13,7 +13,7 @@ class AdminCabangStatsWidget extends BaseWidget
 
     public static function canView(): bool
     {
-        return auth()->user()?->hasRole('admin_cabang') ?? false;
+        return auth()->user()?->hasAnyRole(['admin_cabang', 'koordinator_cabang']) ?? false;
     }
 
     protected function getColumns(): int
