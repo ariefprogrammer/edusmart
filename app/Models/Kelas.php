@@ -40,4 +40,16 @@ class Kelas extends Model
             ->withPivot(['id', 'tanggal_gabung', 'is_active'])
             ->withTimestamps();
     }
+
+    public function jumlahSiswaAktif(): int
+    {
+        return $this->siswa()->wherePivot('is_active', true)->count();
+    }
+
+    public function isKuotaPenuh(): bool
+    {
+        // Kosong = tanpa batas, jadi tidak pernah penuh
+        return $this->kuota_maksimal !== null
+            && $this->jumlahSiswaAktif() >= $this->kuota_maksimal;
+    }
 }

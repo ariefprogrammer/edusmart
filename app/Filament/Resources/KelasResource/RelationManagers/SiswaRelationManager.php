@@ -7,6 +7,7 @@ use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Filament\Notifications\Notification;
 
 class SiswaRelationManager extends RelationManager
 {
@@ -31,6 +32,16 @@ class SiswaRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
+            ->description(function () {
+                $kelas = $this->getOwnerRecord();
+                $terisi = $kelas->jumlahSiswaAktif();
+
+                $kuota = $kelas->kuota_maksimal !== null
+                    ? "{$terisi} / {$kelas->kuota_maksimal}"
+                    : "{$terisi} (tanpa batas)";
+
+                return "Siswa aktif: {$kuota} · Kuota minimal: {$kelas->kuota_minimal}";
+            })
             ->columns([
                 Tables\Columns\TextColumn::make('nama')->searchable()->sortable(),
                 Tables\Columns\BadgeColumn::make('status')
@@ -48,6 +59,29 @@ class SiswaRelationManager extends RelationManager
             ])
             ->headerActions([
                 Tables\Actions\AttachAction::make()
+                    ->label(fn () => $this->getOwnerRecord()->isKuotaPenuh()
+                        ? 'Kuota Penuh'
+                        : __('filament-actions::attach.single.label'))
+                    ->icon(fn () => $this->getOwnerRecord()->isKuotaPenuh()
+                        ? 'heroicon-o-lock-closed'
+                        : 'heroicon-o-plus')
+                    ->color(fn () => $this->getOwnerRecord()->isKuotaPenuh() ? 'danger' : 'primary')
+                    ->disabled(fn () => $this->getOwnerRecord()->isKuotaPenuh())
+                    ->tooltip(fn () => $this->getOwnerRecord()->isKuotaPenuh()
+                        ? 'Kuota maksimal sudah tercapai'
+                        : null)
+                    ->before(function (Tables\Actions\AttachAction $action) {
+                        // Pengaman di sisi server: tombol nonaktif saja tidak cukup
+                        if ($this->getOwnerRecord()->isKuotaPenuh()) {
+                            Notification::make()
+                                ->title('Kuota penuh')
+                                ->body('Siswa tidak dapat ditambahkan karena kuota maksimal sudah tercapai.')
+                                ->danger()
+                                ->send();
+
+                            $action->halt();
+                        }
+                    })
                     ->preloadRecordSelect()
                     ->recordSelectSearchColumns(['nama'])
                     ->recordSelectOptionsQuery(
@@ -90,6 +124,19 @@ class SiswaRelationManager extends RelationManager
                             ])
                             ->columns(1),
                     ])
+                    ->before(function (array $data, $record, Tables\Actions\EditAction $action) {
+                        $mengaktifkanLagi = ($data['is_active'] ?? false) && ! $record->pivot->is_active;
+
+                        if ($mengaktifkanLagi && $this->getOwnerRecord()->isKuotaPenuh()) {
+                            Notification::make()
+                                ->title('Kuota penuh')
+                                ->body('Siswa tidak dapat diaktifkan kembali karena kuota maksimal sudah tercapai.')
+                                ->danger()
+                                ->send();
+
+                            $action->halt();
+                        }
+                    })
                     ->using(function ($record, array $data) {
                         $record->pivot->tanggalPerubahan = $data['tanggal_perubahan'] ?? now();
                         $record->pivot->keteranganPerubahan = $data['keterangan'] ?? null;
