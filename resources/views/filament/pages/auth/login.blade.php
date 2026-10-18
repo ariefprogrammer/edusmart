@@ -154,21 +154,60 @@
             </div>
         </div>
 
-        {{-- Panel kanan: form login --}}
+        {{-- Panel kanan: form login / verifikasi OTP --}}
         <div class="login-form-side">
-            <div class="login-form-head">
-                <h1>Selamat datang</h1>
-                <p>Masuk ke akun Anda untuk melanjutkan.</p>
-            </div>
+            @if ($awaitingOtp)
+                <div class="login-form-head">
+                    <h1>Verifikasi login</h1>
+                    <p>
+                        Kami mengirim kode {{ config('otp.code_length', 6) }} digit ke
+                        <strong>{{ $maskedEmail }}</strong>. Kode berlaku
+                        {{ config('otp.expires_in_minutes', 10) }} menit.
+                    </p>
+                </div>
 
-            <x-filament-panels::form wire:submit="authenticate">
-                {{ $this->form }}
+                <x-filament-panels::form wire:submit="verifyOtp">
+                    {{ $this->otpForm }}
 
-                <x-filament-panels::form.actions
-                    :actions="$this->getCachedFormActions()"
-                    :full-width="$this->hasFullWidthFormActions()"
-                />
-            </x-filament-panels::form>
+                    <x-filament::button type="submit" size="lg" class="w-full">
+                        Verifikasi
+                    </x-filament::button>
+                </x-filament-panels::form>
+
+                <div
+                    class="mt-4 flex items-center justify-between text-sm"
+                    x-data="{ s: {{ (int) $resendSeconds }} }"
+                    x-init="setInterval(() => { if (s > 0) s-- }, 1000)"
+                    x-on:otp-resent.window="s = $event.detail.seconds"
+                >
+                    <button type="button" wire:click="backToLogin"
+                        class="text-gray-500 hover:underline">
+                        &larr; Kembali
+                    </button>
+
+                    <button type="button" wire:click="resendOtp"
+                        x-bind:disabled="s > 0"
+                        x-bind:class="s > 0 ? 'opacity-50 cursor-not-allowed' : 'hover:underline'"
+                        class="text-primary-600">
+                        <span x-show="s > 0" x-cloak>Kirim ulang dalam <span x-text="s"></span> dtk</span>
+                        <span x-show="s <= 0">Kirim ulang kode</span>
+                    </button>
+                </div>
+            @else
+                <div class="login-form-head">
+                    <h1>Selamat datang</h1>
+                    <p>Masuk ke akun Anda untuk melanjutkan.</p>
+                </div>
+
+                <x-filament-panels::form wire:submit="authenticate">
+                    {{ $this->form }}
+
+                    <x-filament-panels::form.actions
+                        :actions="$this->getCachedFormActions()"
+                        :full-width="$this->hasFullWidthFormActions()"
+                    />
+                </x-filament-panels::form>
+            @endif
         </div>
     </div>
 </x-filament-panels::page.simple>

@@ -9,3 +9,5 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('presensi:tandai-tidak-checkout')->everyThirtyMinutes();
+
+Schedule::command('model:prune')->daily();
