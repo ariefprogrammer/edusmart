@@ -19,6 +19,9 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Database\Eloquent\Builder;
+use App\Models\Kelas;
+use Closure;
+use Illuminate\Database\Eloquent\Model;
 
 class SiswaResource extends Resource
 {
@@ -30,8 +33,31 @@ class SiswaResource extends Resource
     protected static ?string $navigationGroup = 'Manajemen Siswa';
     protected static ?int $navigationSort = 12;
 
+    protected static function programAktifSiswa(?Model $record): array
+    {
+        if (! $record?->exists) {
+            return [];
+        }
+
+        return $record->kelasList()
+            ->wherePivot('is_active', true)
+            ->pluck('kelas.id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
     public static function form(Form $form): Form
     {
+        $idPenuh = null;
+        $ambilIdPenuh = function () use (&$idPenuh): array {
+            return $idPenuh ??= Kelas::idPenuh();
+        };
+
+        $idAktifSiswa = null;
+        $ambilIdAktifSiswa = function (?Model $record) use (&$idAktifSiswa): array {
+            return $idAktifSiswa ??= self::programAktifSiswa($record);
+        };
+        
         return $form->schema([
             Select::make('cabang_id')
                 ->relationship('cabang', 'nama_cabang')
@@ -55,7 +81,32 @@ class SiswaResource extends Resource
                 ->searchable()
                 ->preload()
                 ->required()
-                ->pivotData(['tanggal_gabung' => now(), 'is_active' => true]),
+                ->pivotData(['tanggal_gabung' => now(), 'is_active' => true])
+                // Tampilan: program penuh tidak bisa dipilih, kecuali siswa ini sudah aktif di sana
+                ->disableOptionWhen(function (string $value, ?Model $record) use ($ambilIdPenuh, $ambilIdAktifSiswa) {
+                    $id = (int) $value;
+
+                    return in_array($id, $ambilIdPenuh(), true)
+                        && ! in_array($id, $ambilIdAktifSiswa($record), true);
+                })
+                // Server: tolak penyimpanan kalau ada program penuh yang akan ditambahkan
+                ->rule(fn (?Model $record): Closure => function (string $attribute, $value, Closure $fail) use ($record) {
+                    $dipilih = collect($value ?? [])->map(fn ($id) => (int) $id);
+                    $akanDitambah = $dipilih
+                        ->diff(self::programAktifSiswa($record))
+                        ->values()
+                        ->all();
+
+                    if ($akanDitambah === []) {
+                        return;
+                    }
+
+                    $namaPenuh = Kelas::whereIn('id', Kelas::idPenuh($akanDitambah))->pluck('nama_kelas');
+
+                    if ($namaPenuh->isNotEmpty()) {
+                        $fail('Kuota penuh untuk program: ' . $namaPenuh->join(', ') . '. Hapus dari pilihan atau naikkan kuota maksimalnya.');
+                    }
+                }),
 
             TextInput::make('nama')
                 ->label('Nama Siswa')

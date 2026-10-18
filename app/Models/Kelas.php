@@ -52,4 +52,19 @@ class Kelas extends Model
         return $this->kuota_maksimal !== null
             && $this->jumlahSiswaAktif() >= $this->kuota_maksimal;
     }
+
+    public static function idPenuh(?array $ids = null): array
+    {
+        return static::query()
+            ->whereNotNull('kuota_maksimal')
+            ->when($ids !== null, fn ($query) => $query->whereIn('id', $ids))
+            ->withCount([
+                'siswa as siswa_aktif_count' => fn ($query) => $query->where('kelas_siswa.is_active', true),
+            ])
+            ->get()
+            ->filter(fn (Kelas $kelas) => $kelas->siswa_aktif_count >= $kelas->kuota_maksimal)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
 }
