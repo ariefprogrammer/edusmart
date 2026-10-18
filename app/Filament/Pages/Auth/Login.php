@@ -15,6 +15,8 @@ use Filament\Pages\Auth\Login as BaseLogin;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Locked;
+use App\Services\TrustedDeviceService;
+use Filament\Forms\Components\Checkbox;
 
 class Login extends BaseLogin
 {
@@ -77,6 +79,10 @@ class Login extends BaseLogin
                             'maxlength' => config('otp.code_length', 6),
                             'class' => 'text-center tracking-widest',
                         ]),
+
+                    Checkbox::make('trust_device')
+                        ->label('Percayai perangkat ini')
+                        ->helperText('Tidak diminta kode lagi di perangkat ini selama beberapa hari. Jangan dicentang di komputer umum.'),
                 ])
                 ->statePath('otpData'),
         ]);
@@ -120,7 +126,10 @@ class Login extends BaseLogin
             return $this->completeLogin($user, $remember);
         }
 
-        // LANGKAH 4 nanti: cek cookie trusted device di sini
+        // Perangkat tepercaya: lewati OTP
+        if (app(TrustedDeviceService::class)->isTrusted($user, request())) {
+            return $this->completeLogin($user, $remember);
+        }
 
         return $this->startOtpChallenge($user, $remember, $otp);
     }
@@ -159,7 +168,9 @@ class Login extends BaseLogin
 
         session()->forget('otp_pending');
 
-        // LANGKAH 4 nanti: buat trusted device di sini bila dicentang
+        if (! empty($data['trust_device'])) {
+            app(TrustedDeviceService::class)->remember($user, request());
+        }
 
         return $this->completeLogin($user, (bool) $pending['remember']);
     }
@@ -209,6 +220,14 @@ class Login extends BaseLogin
 
     protected function startOtpChallenge(User $user, bool $remember, OtpService $otp): ?LoginResponse
     {
+        logger()->info('OTP-DEBUG', [
+            'queue' => config('queue.default'),
+            'mail' => config('mail.default'),
+            'env' => app()->environment(),
+            'base_path' => base_path(),
+            'log_file' => storage_path('logs/laravel.log'),
+            'sapi' => php_sapi_name(),
+        ]);
         try {
             $otp->issue($user, request()->ip(), request()->userAgent());
         } catch (OtpThrottledException $e) {

@@ -13,6 +13,7 @@ use Spatie\Permission\Traits\HasRoles;
 use App\Models\Concerns\HasUuid;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use App\Models\TrustedDevice;
 
 #[Fillable(['name', 'email', 'password'])]
 #[Hidden(['password', 'remember_token'])]
@@ -42,6 +43,15 @@ class User extends Authenticatable
     public function guru(): HasOne
     {
         return $this->hasOne(Guru::class);
+    }
+
+    protected static function booted(): void
+    {
+        static::updated(function (User $user) {
+            if ($user->wasChanged('password')) {
+                TrustedDevice::where('user_id', $user->id)->delete();
+            }
+        });
     }
 
 }

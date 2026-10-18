@@ -20,4 +20,10 @@ return [
     // Dipakai nanti di langkah trusted device
     'trusted_device_days' => 30,
     'trusted_device_cookie' => 'trusted_device',
+
+    'trusted_device_days_by_role' => [
+        'super_admin' => 7,
+        'owner' => 7,
+        'finance_pusat' => 7,
+    ],
 ];
