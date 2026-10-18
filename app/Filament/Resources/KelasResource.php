@@ -55,6 +55,39 @@ class KelasResource extends Resource
                     ->columnSpanFull()
                     ->maxLength(255),
 
+                Forms\Components\TextInput::make('kuota_minimal')
+                    ->label('Kuota Minimal')
+                    ->numeric()
+                    ->integer()
+                    ->minValue(0)
+                    ->maxValue(65535)
+                    ->default(0)
+                    ->required()
+                    ->helperText('Jumlah siswa minimal agar kelas dijalankan.')
+                    ->validationMessages([
+                        'required' => 'Kuota minimal wajib diisi.',
+                        'numeric' => 'Kuota minimal harus berupa angka.',
+                        'integer' => 'Kuota minimal harus berupa bilangan bulat.',
+                        'min' => 'Kuota minimal tidak boleh kurang dari 0.',
+                        'max' => 'Kuota minimal tidak boleh lebih dari 65535.',
+                    ]),
+
+                Forms\Components\TextInput::make('kuota_maksimal')
+                    ->label('Kuota Maksimal')
+                    ->numeric()
+                    ->integer()
+                    ->minValue(1)
+                    ->maxValue(65535)
+                    ->gte('kuota_minimal')
+                    ->helperText('Jumlah siswa maksimal. Kosongkan jika tidak dibatasi.')
+                    ->validationMessages([
+                        'numeric' => 'Kuota maksimal harus berupa angka.',
+                        'integer' => 'Kuota maksimal harus berupa bilangan bulat.',
+                        'min' => 'Kuota maksimal minimal 1.',
+                        'max' => 'Kuota maksimal tidak boleh lebih dari 65535.',
+                        'gte' => 'Kuota maksimal tidak boleh lebih kecil dari kuota minimal.',
+                    ]),
+
                 Forms\Components\Textarea::make('keterangan')
                     ->columnSpanFull(),
 
@@ -75,6 +108,13 @@ class KelasResource extends Resource
                 Tables\Columns\TextColumn::make('nama_kelas')
                     ->label('Nama Kelas / Program')
                     ->searchable(),
+                Tables\Columns\TextColumn::make('kuota_minimal')
+                    ->label('Kuota Min')
+                    ->alignment(Alignment::Center),
+                Tables\Columns\TextColumn::make('kuota_maksimal')
+                    ->label('Kuota Maks')
+                    ->placeholder('Tanpa batas')
+                    ->alignment(Alignment::Center),
                 Tables\Columns\IconColumn::make('is_active')
                     ->alignment(Alignment::Center)
                     ->boolean(),

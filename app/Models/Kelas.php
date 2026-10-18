@@ -15,6 +15,12 @@ class Kelas extends Model
 
     protected $fillable = [
         'cabang_id', 'nama_kelas', 'keterangan', 'is_active',
+        'kuota_minimal', 'kuota_maksimal',
+    ];
+
+    protected $casts = [
+        'kuota_minimal' => 'integer',
+        'kuota_maksimal' => 'integer',
     ];
 
     public function cabang(): BelongsTo
