@@ -67,4 +67,17 @@ class Kelas extends Model
             ->map(fn ($id) => (int) $id)
             ->all();
     }
+
+    public static function belumMemenuhiMinimal(?array $ids = null): \Illuminate\Support\Collection
+    {
+        return static::query()
+            ->where('kuota_minimal', '>', 0)
+            ->when($ids !== null, fn ($query) => $query->whereIn('id', $ids))
+            ->withCount([
+                'siswa as siswa_aktif_count' => fn ($query) => $query->where('kelas_siswa.is_active', true),
+            ])
+            ->get()
+            ->filter(fn (Kelas $kelas) => $kelas->siswa_aktif_count < $kelas->kuota_minimal)
+            ->keyBy('id');
+    }
 }

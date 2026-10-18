@@ -17,6 +17,9 @@ use Filament\Forms\Components\Select;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Support\Enums\Alignment;
 use App\Models\Concerns\ScopedToCabang;
+use App\Models\Kelas;
+use Closure;
+use Illuminate\Database\Eloquent\Model;
 
 class JadwalResource extends Resource
 {
@@ -37,6 +40,11 @@ class JadwalResource extends Resource
 
     public static function form(Form $form): Form
     {
+        $belumMemenuhi = null;
+        $ambilBelumMemenuhi = function () use (&$belumMemenuhi) {
+            return $belumMemenuhi ??= Kelas::belumMemenuhiMinimal();
+        };
+
         return $form
             ->schema([
                 Select::make('cabang_id')
@@ -59,7 +67,45 @@ class JadwalResource extends Resource
                     )
                     ->searchable()
                     ->preload()
-                    ->required(),
+                    ->required()
+                    // Label menjelaskan kenapa sebuah kelas tidak bisa dipilih
+                    ->getOptionLabelFromRecordUsing(function (Kelas $record) use ($ambilBelumMemenuhi) {
+                        $belum = $ambilBelumMemenuhi()->get($record->id);
+
+                        return $belum
+                            ? "{$record->nama_kelas} (belum memenuhi minimal: {$belum->siswa_aktif_count}/{$belum->kuota_minimal} siswa)"
+                            : $record->nama_kelas;
+                    })
+                    // Tampilan: kelas yang belum memenuhi minimal tidak bisa dipilih
+                    ->disableOptionWhen(function (string $value, ?Model $record) use ($ambilBelumMemenuhi) {
+                        // Jadwal yang sudah ada boleh tetap di kelasnya
+                        if ($record?->exists && (int) $record->kelas_id === (int) $value) {
+                            return false;
+                        }
+
+                        return $ambilBelumMemenuhi()->has((int) $value);
+                    })
+                    // Server: tolak penyimpanan kalau kelasnya belum memenuhi minimal
+                    ->rule(fn (?Model $record): Closure => function (string $attribute, $value, Closure $fail) use ($record) {
+                        if (blank($value)) {
+                            return;
+                        }
+
+                        // Mengedit jadwal tanpa mengganti kelas tidak dicek ulang
+                        if ($record?->exists && (int) $record->kelas_id === (int) $value) {
+                            return;
+                        }
+
+                        $kelas = Kelas::belumMemenuhiMinimal([(int) $value])->first();
+
+                        if ($kelas) {
+                            $fail(
+                                'Kelas ' . $kelas->nama_kelas . ' belum memenuhi kuota minimal ('
+                                . $kelas->siswa_aktif_count . ' dari ' . $kelas->kuota_minimal
+                                . ' siswa), sehingga belum dapat dijadwalkan.'
+                            );
+                        }
+                    }),
 
                 Select::make('guru_id')
                     ->relationship(
