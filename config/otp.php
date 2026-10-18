@@ -11,6 +11,7 @@ return [
         'guru',
     ],
 
+    'enabled' => env('OTP_ENABLED', true),
     'code_length' => 6,
     'expires_in_minutes' => 10,
     'max_attempts' => 5,

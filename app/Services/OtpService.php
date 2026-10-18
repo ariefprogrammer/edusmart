@@ -13,6 +13,10 @@ class OtpService
 {
     public function requiresOtp(User $user): bool
     {
+        if (! config('otp.enabled', true)) {
+            return false;
+        }
+        
         return $user->hasAnyRole(config('otp.required_roles', []));
     }
 

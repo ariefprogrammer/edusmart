@@ -14,6 +14,7 @@ use App\Models\Concerns\HasUuid;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use App\Models\TrustedDevice;
+use App\Models\LoginOtp;
 
 #[Fillable(['name', 'email', 'password'])]
 #[Hidden(['password', 'remember_token'])]
@@ -48,8 +49,14 @@ class User extends Authenticatable
     protected static function booted(): void
     {
         static::updated(function (User $user) {
-            if ($user->wasChanged('password')) {
+            // Password atau email berubah: semua perangkat tepercaya dicabut
+            if ($user->wasChanged(['password', 'email'])) {
                 TrustedDevice::where('user_id', $user->id)->delete();
+            }
+
+            // Email berubah: kode OTP yang terlanjur dikirim ke email lama dihanguskan
+            if ($user->wasChanged('email')) {
+                LoginOtp::where('user_id', $user->id)->delete();
             }
         });
     }

@@ -15,6 +15,10 @@ use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Select;
 use Illuminate\Support\Facades\Hash;
+use App\Models\LoginOtp;
+use App\Services\TrustedDeviceService;
+use Filament\Notifications\Notification;
+use Filament\Tables\Actions\Action;
 
 class UserResource extends Resource
 {
@@ -87,6 +91,23 @@ class UserResource extends Resource
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
+                
+                Action::make('resetOtp')
+                    ->label('Reset OTP & perangkat')
+                    ->icon('heroicon-o-key')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->modalDescription('Menghapus kode OTP yang tertunda dan semua perangkat tepercaya user ini. User akan diminta OTP lagi di login berikutnya.')
+                    ->visible(fn () => auth()->user()?->hasRole('super_admin'))
+                    ->action(function (User $record) {
+                        LoginOtp::where('user_id', $record->id)->delete();
+                        app(TrustedDeviceService::class)->revokeAll($record);
+
+                        Notification::make()
+                            ->title('OTP dan perangkat tepercaya direset')
+                            ->success()
+                            ->send();
+                    }),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
