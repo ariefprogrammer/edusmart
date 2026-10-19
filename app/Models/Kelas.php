@@ -80,4 +80,19 @@ class Kelas extends Model
             ->filter(fn (Kelas $kelas) => $kelas->siswa_aktif_count < $kelas->kuota_minimal)
             ->keyBy('id');
     }
+
+    public function statusKuota(?int $jumlah = null): string
+    {
+        $jumlah ??= $this->siswa_aktif_count ?? $this->jumlahSiswaAktif();
+
+        if ($this->kuota_minimal > 0 && $jumlah < $this->kuota_minimal) {
+            return 'kurang';
+        }
+
+        if ($this->kuota_maksimal !== null && $jumlah > $this->kuota_maksimal) {
+            return 'lebih';
+        }
+
+        return 'ok';
+    }
 }

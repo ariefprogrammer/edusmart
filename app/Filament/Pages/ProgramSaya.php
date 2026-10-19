@@ -41,7 +41,7 @@ class ProgramSaya extends Page
                 'jadwal' => fn (HasMany $q) => $q->where('guru_id', $guruId),
                 'siswa' => fn (BelongsToMany $q) => $q->orderBy('nama'),
             ])
-            ->withCount(['siswa as siswa_aktif_count' => fn (Builder $q) => $q->where('status', 'aktif')])
+            ->withCount(['siswa as siswa_aktif_count' => fn (Builder $q) => $q->where('kelas_siswa.is_active', true)])
             ->get();
     }
 }
