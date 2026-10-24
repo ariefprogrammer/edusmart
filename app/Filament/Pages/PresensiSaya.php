@@ -40,6 +40,14 @@ class PresensiSaya extends Page implements HasForms, HasTable
             ->first();
     }
 
+    public function getJadwalHariIni(): ?JadwalClock
+    {
+        return JadwalClock::where('user_id', auth()->id())
+            ->where('hari', Hari::ini())
+            ->where('is_active', true)
+            ->first();
+    }
+
     public function getCabang(): ?Cabang
     {
         return auth()->user()->cabang->first();
@@ -84,6 +92,10 @@ class PresensiSaya extends Page implements HasForms, HasTable
                         default => 'gray',
                     })
                     ->formatStateUsing(fn (string $state): string => ucfirst(str_replace('_', ' ', $state))),
+                TextColumn::make('keterangan')
+                    ->label('Keterangan')
+                    ->placeholder('-')
+                    ->wrap(),
             ])
             ->filters([
                 Filter::make('tanggal')
@@ -119,28 +131,39 @@ class PresensiSaya extends Page implements HasForms, HasTable
             ]);
     }
 
-    public function checkIn(float $lat, float $lng, int $accuracy, string $foto): void
+    public function checkIn(float $lat, float $lng, int $accuracy, string $foto, bool $tugasKeluar = false): bool
     {
         $cabang = $this->getCabang();
 
         if (! $cabang) {
             Notification::make()->danger()->title('Kamu belum terdaftar di cabang manapun.')->send();
-            return;
+            return false;
         }
 
         if (is_null($cabang->latitude) || is_null($cabang->longitude)) {
             Notification::make()->danger()->title('Titik lokasi cabang belum diatur. Hubungi admin.')->send();
-            return;
+            return false;
+        }
+
+        $jadwal = $this->getJadwalHariIni();
+
+        if (! $jadwal) {
+            Notification::make()->danger()
+                ->title('Anda tidak memiliki jadwal clock in hari ini')
+                ->body('Hubungi admin jika menurut Anda ini keliru.')
+                ->send();
+            return false;
         }
 
         $distance = $cabang->distanceInMeters($lat, $lng);
+        $luarKantor = $distance > $cabang->radius_presensi_meter;
 
-        if ($distance > $cabang->radius_presensi_meter) {
+        if ($luarKantor && ! $tugasKeluar) {
             Notification::make()->danger()
                 ->title('Di luar jangkauan lokasi cabang')
-                ->body('Jarak kamu sekitar ' . round($distance) . ' meter (maksimal ' . $cabang->radius_presensi_meter . ' meter).')
+                ->body('Jarak kamu sekitar ' . round($distance) . ' meter (maksimal ' . $cabang->radius_presensi_meter . ' meter). Jika sedang tugas keluar, aktifkan "Tugas Keluar" lalu coba lagi.')
                 ->send();
-            return;
+            return false;
         }
 
         if ($accuracy > self::MAX_ACCURACY_METER) {
@@ -148,7 +171,7 @@ class PresensiSaya extends Page implements HasForms, HasTable
                 ->title('Akurasi GPS terlalu rendah')
                 ->body('Coba di area terbuka dan aktifkan mode GPS presisi tinggi, lalu coba lagi.')
                 ->send();
-            return;
+            return false;
         }
 
         $jadwal = JadwalClock::where('user_id', auth()->id())
@@ -163,44 +186,59 @@ class PresensiSaya extends Page implements HasForms, HasTable
             $statusMasuk = now()->format('H:i:s') <= $batas->format('H:i:s') ? 'hadir' : 'terlambat';
         }
 
+        $data = [
+            'cabang_id' => $cabang->id,
+            'check_in' => now(),
+            'check_in_lat' => $lat,
+            'check_in_lng' => $lng,
+            'check_in_accuracy' => $accuracy,
+            'check_in_foto' => $this->simpanFoto($foto, 'check-in'),
+            'status_masuk' => $statusMasuk,
+        ];
+
+        // Hanya ditandai kalau memang berada di luar radius
+        if ($luarKantor) {
+            $data['keterangan'] = $this->tambahKeterangan(
+                $this->getPresensiHariIni()?->keterangan,
+                'Check In dari luar kantor (tugas keluar), jarak ±' . round($distance) . ' m dari cabang.'
+            );
+        }
+
         PresensiKaryawan::updateOrCreate(
             ['user_id' => auth()->id(), 'tanggal' => today()],
-            [
-                'cabang_id' => $cabang->id,
-                'check_in' => now(),
-                'check_in_lat' => $lat,
-                'check_in_lng' => $lng,
-                'check_in_accuracy' => $accuracy,
-                'check_in_foto' => $this->simpanFoto($foto, 'check-in'),
-                'status_masuk' => $statusMasuk,
-            ],
+            $data,
         );
 
-        Notification::make()->success()->title('Check In berhasil')->send();
+        Notification::make()->success()->title('Check In berhasil')
+            ->body($luarKantor ? 'Tercatat sebagai presensi dari luar kantor (tugas keluar).' : null)
+            ->send();
+
+        return true;
     }
 
-    public function checkOut(float $lat, float $lng, int $accuracy, string $foto): void
+    public function checkOut(float $lat, float $lng, int $accuracy, string $foto, bool $tugasKeluar = false): bool
     {
         $presensi = $this->getPresensiHariIni();
 
         if (! $presensi || ! $presensi->check_in) {
             Notification::make()->danger()->title('Kamu belum Check In hari ini.')->send();
-            return;
+            return false;
         }
 
         if ($presensi->check_out) {
             Notification::make()->warning()->title('Kamu sudah Check Out hari ini.')->send();
-            return;
+            return false;
         }
 
         $distance = $presensi->cabang->distanceInMeters($lat, $lng);
+        $luarKantor = $distance > $presensi->cabang->radius_presensi_meter;
 
-        if ($distance > $presensi->cabang->radius_presensi_meter) {
+        if ($luarKantor && ! $tugasKeluar) {
             Notification::make()->danger()
                 ->title('Di luar jangkauan lokasi cabang')
-                ->body('Jarak kamu sekitar ' . round($distance) . ' meter.')
+                ->body('Jarak kamu sekitar ' . round($distance) . ' meter. Jika sedang tugas keluar, aktifkan "Tugas Keluar" lalu coba lagi.')
                 ->send();
-            return;
+            return false;
         }
 
         $jadwalClock = JadwalClock::where('user_id', auth()->id())
@@ -214,16 +252,36 @@ class PresensiSaya extends Page implements HasForms, HasTable
             $statusKeluar = now()->format('H:i:s') < $jadwalClock->clock_out ? 'bolos' : 'pulang';
         }
 
-        $presensi->update([
+        $data = [
             'check_out' => now(),
             'check_out_lat' => $lat,
             'check_out_lng' => $lng,
             'check_out_accuracy' => $accuracy,
             'check_out_foto' => $this->simpanFoto($foto, 'check-out'),
             'status_keluar' => $statusKeluar,
-        ]);
+        ];
 
-        Notification::make()->success()->title('Check Out berhasil')->send();
+        if ($luarKantor) {
+            $data['keterangan'] = $this->tambahKeterangan(
+                $presensi->keterangan,
+                'Check Out dari luar kantor (tugas keluar), jarak ±' . round($distance) . ' m dari cabang.'
+            );
+        }
+
+        $presensi->update($data);
+
+        Notification::make()->success()->title('Check Out berhasil')
+            ->body($luarKantor ? 'Tercatat sebagai presensi dari luar kantor (tugas keluar).' : null)
+            ->send();
+
+        return true;
+    }
+
+    protected function tambahKeterangan(?string $lama, string $baru): string
+    {
+        $lama = trim((string) $lama);
+
+        return $lama === '' ? $baru : $lama . ' | ' . $baru;
     }
 
     protected function simpanFoto(string $base64, string $prefix): string

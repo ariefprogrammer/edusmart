@@ -1,4 +1,43 @@
 <x-filament-panels::page>
+    <style>
+        .tk-row {
+            display: inline-flex;
+            align-items: center;
+            gap: .625rem;
+            padding: .25rem 0;
+            border: 0;
+            background: none;
+            cursor: pointer;
+            font-size: .875rem;
+            font-weight: 500;
+            color: rgb(var(--gray-700));
+        }
+        .dark .tk-row { color: rgb(var(--gray-200)); }
+
+        .tk-switch {
+            position: relative;
+            flex-shrink: 0;
+            width: 2.5rem;
+            height: 1.5rem;
+            border-radius: 9999px;
+            background: rgb(var(--gray-300));
+            transition: background .2s ease;
+        }
+        .dark .tk-switch { background: rgb(var(--gray-600)); }
+        .tk-switch.tk-switch--on { background: rgb(var(--primary-600)); }
+
+        .tk-switch-thumb {
+            position: absolute;
+            top: .1875rem;
+            left: .1875rem;
+            width: 1.125rem;
+            height: 1.125rem;
+            border-radius: 9999px;
+            background: #fff;
+            transition: transform .2s ease;
+        }
+        .tk-switch--on .tk-switch-thumb { transform: translateX(1rem); }
+    </style>
     @php $presensi = $this->getPresensiHariIni(); @endphp
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -44,6 +83,10 @@
                         @endif
                     </div>
                 </div>
+
+                @if($presensi?->keterangan)
+                    <p class="text-xs text-warning-600 dark:text-warning-400">{{ $presensi->keterangan }}</p>
+                @endif
             </div>
         </div>
 
@@ -76,6 +119,27 @@
             <button type="button" x-show="!coords.lat" @click="ambilLokasi()" class="text-primary-600 text-sm underline">
                 Coba Lagi Ambil Lokasi
             </button>
+
+            @if(! $presensi?->check_out)
+                <div class="w-full max-w-sm text-center">
+                    <button
+                        type="button"
+                        role="switch"
+                        class="tk-row"
+                        x-bind:aria-checked="tugasKeluar.toString()"
+                        x-on:click="tugasKeluar = ! tugasKeluar"
+                    >
+                        <span class="tk-switch" x-bind:class="{ 'tk-switch--on': tugasKeluar }">
+                            <span class="tk-switch-thumb"></span>
+                        </span>
+                        <span>Tugas Keluar</span>
+                    </button>
+
+                    <p class="mt-1 text-xs text-warning-600 dark:text-warning-400" x-show="tugasKeluar" x-cloak>
+                        Presensi dari luar radius cabang akan diterima. Lokasi tetap dicatat dan ditandai "dari luar kantor".
+                    </p>
+                </div>
+            @endif
 
             <!-- Tombol Aksi (Foto & Check In/Out) -->
             <div class="flex flex-wrap justify-center gap-3 w-full">
@@ -118,6 +182,7 @@
             photo: null,
             coords: { lat: null, lng: null, accuracy: null },
             locationError: null,
+            tugasKeluar: false,
 
             async init() {
                 this.ambilLokasi();
@@ -179,10 +244,13 @@
                     (pos) => {
                         this.coords = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
 
-                        $wire.call(method, this.coords.lat, this.coords.lng, Math.round(this.coords.accuracy), this.photo)
-                            .then(() => {
-                                this.stream?.getTracks().forEach((t) => t.stop());
-                                window.location.reload();
+                        $wire.call(method, this.coords.lat, this.coords.lng, Math.round(this.coords.accuracy), this.photo, this.tugasKeluar)
+                            .then((berhasil) => {
+                                // Reload hanya kalau berhasil. Kalau ditolak, foto tetap ada supaya bisa dikirim ulang.
+                                if (berhasil) {
+                                    this.stream?.getTracks().forEach((t) => t.stop());
+                                    window.location.reload();
+                                }
                             });
                     },
                     () => { this.locationError = 'Gagal mengambil lokasi terbaru. Coba lagi.'; },
