@@ -227,9 +227,9 @@
                     <div class="w-full md:w-1/3">
                         <label class="text-xs text-gray-500 mb-1 block">Periode</label>
                         <x-filament::input.wrapper>
-                            <select wire:model.live="periodeSemesterId" @disabled(! $isGuruPengampu) class="fi-select-input block w-full border-none bg-transparent py-1.5 text-sm">
+                            <select wire:model.live="periodeNilaiId" @disabled(! $isGuruPengampu) class="fi-select-input block w-full border-none bg-transparent py-1.5 text-sm">
                                 <option value="">Pilih Periode</option>
-                                @foreach($this->getPeriodeSemesterOptions() as $id => $nama)
+                                @foreach($this->getPeriodeOptions() as $id => $nama)
                                     <option value="{{ $id }}">{{ $nama }}</option>
                                 @endforeach
                             </select>

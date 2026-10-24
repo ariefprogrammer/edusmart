@@ -31,6 +31,9 @@ class ManajemenProgram extends Page
     // Periode tipe "bulan" — dipakai di tab Presensi & Progress, mengikuti tanggal yang dipilih
     public ?int $periodeId = null;
 
+    // Periode tipe "bulan" — dipakai di tab Nilai, dipilih lewat dropdown (tidak mengikuti tanggal)
+    public ?int $periodeNilaiId = null;
+
     // Periode tipe "semester" — dipakai di tab Nilai & RPP, tidak terikat input tanggal
     public ?int $periodeSemesterId = null;
 
@@ -65,6 +68,7 @@ class ManajemenProgram extends Page
         $this->activeTab = 'presensi';
 
         $this->periodeId = $this->cariPeriodeUntukTanggal($this->tanggal, 'bulan');
+        $this->periodeNilaiId = $this->periodeId;
         $this->periodeSemesterId = $this->cariPeriodeUntukTanggal(today()->toDateString(), 'semester');
 
         $this->loadPresensi();
@@ -80,7 +84,7 @@ class ManajemenProgram extends Page
         $this->loadProgress();
     }
 
-    public function updatedPeriodeSemesterId(): void
+    public function updatedPeriodeNilaiId(): void
     {
         $this->loadNilai();
     }
@@ -295,7 +299,7 @@ class ManajemenProgram extends Page
         $kategoriList = $this->getKategoriList();
 
         $existing = NilaiSiswa::where('kelas_id', $this->kelas->id)
-            ->where('periode_id', $this->periodeSemesterId)
+            ->where('periode_id', $this->periodeNilaiId)
             ->get()
             ->groupBy('siswa_id');
 
@@ -314,7 +318,7 @@ class ManajemenProgram extends Page
     {
         abort_unless($this->isGuruPengampu, 403);
 
-        if (! $this->periodeSemesterId) {
+        if (! $this->periodeNilaiId) {
             Notification::make()->danger()->title('Pilih periode terlebih dahulu')->send();
             return;
         }
@@ -337,7 +341,7 @@ class ManajemenProgram extends Page
                         'kelas_id' => $this->kelas->id,
                         'siswa_id' => $siswaId,
                         'kategori_nilai_id' => $kategoriId,
-                        'periode_id' => $this->periodeSemesterId,
+                        'periode_id' => $this->periodeNilaiId,
                     ],
                     [
                         'cabang_id' => $this->kelas->cabang_id,
