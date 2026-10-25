@@ -33,14 +33,22 @@
     </div>
 
     @unless($isGuruPengampu)
-        <div class="text-xs px-3 py-2 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+        <div class="text-xs px-3 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
             Mode lihat saja — hanya guru yang ditugaskan di program ini yang bisa mengubah data.
         </div>
     @endunless
 
     @if($activeTab === 'presensi')
-        @php $siswaList = $this->getSiswaList(); @endphp
-
+        @php
+            $siswaList = $this->getSiswaList();
+            $hariIni = $this->isTanggalHariIni();
+            $bisaInput = $isGuruPengampu && $hariIni;
+        @endphp
+        @if($isGuruPengampu && ! $hariIni)
+            <div class="mb-4 text-xs px-3 py-2 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                Mode lihat saja — data hanya dapat diinput pada tanggal hari ini ({{ today()->translatedFormat('d F Y') }}).
+            </div>
+        @endif
         <div class="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
             <div class="mb-4 flex gap-3 max-w-md">
                 <div class="flex-1">
@@ -57,7 +65,7 @@
                 <div class="flex-1">
                     <label class="mb-2 text-xs text-gray-500 mb-1 block">Periode</label>
                     <x-filament::input.wrapper>
-                        <select wire:model.live="periodeId" @disabled(! $isGuruPengampu) class="fi-select-input block w-full border-none bg-transparent py-1.5 text-sm">
+                        <select wire:model.live="periodeId" disabled class="fi-select-input block w-full border-none bg-transparent py-1.5 text-sm">
                             <option value="">Pilih Periode</option>
                             @foreach($this->getPeriodeOptions() as $id => $nama)
                                 <option value="{{ $id }}">{{ $nama }}</option>
@@ -88,7 +96,7 @@
                         </thead>
                         <tbody>
                             @foreach($siswaList as $i => $siswa)
-                                @php $bisaDiedit = $isGuruPengampu && $siswa->is_active; @endphp
+                                @php $bisaDiedit = $bisaInput && $siswa->is_active; @endphp
                                 <tr wire:key="presensi-row-{{ $siswa->id }}" class="border-b dark:border-gray-700 last:border-b-0">
                                     <td class="py-2 px-2 text-gray-500">{{ $i + 1 }}</td>
                                     <td class="py-2 px-2 font-medium">
@@ -130,7 +138,7 @@
                     </table>
                 </div>
 
-                @if($isGuruPengampu)
+                @if($bisaInput)
                     <div class="mt-6">
                         <x-filament::button wire:click="submitPresensi">
                             Submit Presensi
@@ -140,8 +148,16 @@
             @endif
         </div>
     @elseif($activeTab === 'progress')
-        @php $siswaList = $this->getSiswaList(); @endphp
-
+        @php
+            $siswaList = $this->getSiswaList();
+            $hariIni = $this->isTanggalHariIni();
+            $bisaInput = $isGuruPengampu && $hariIni;
+        @endphp
+        @if($isGuruPengampu && ! $hariIni)
+            <div class="mb-4 text-xs px-3 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                Mode lihat saja — data hanya dapat diinput pada tanggal hari ini ({{ today()->translatedFormat('d F Y') }}).
+            </div>
+        @endif
         <div class="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
             <div class="mb-4 flex gap-3 max-w-md">
                 <div class="flex-1">
@@ -158,7 +174,7 @@
                 <div class="flex-1">
                     <label class="mb-2 text-xs text-gray-500 mb-1 block">Periode</label>
                     <x-filament::input.wrapper>
-                        <select wire:model.live="periodeId" @disabled(! $isGuruPengampu) class="fi-select-input block w-full border-none bg-transparent py-1.5 text-sm">
+                        <select wire:model.live="periodeId" disabled class="fi-select-input block w-full border-none bg-transparent py-1.5 text-sm">
                             <option value="">Pilih Periode</option>
                             @foreach($this->getPeriodeOptions() as $id => $nama)
                                 <option value="{{ $id }}">{{ $nama }}</option>
@@ -182,7 +198,7 @@
                         </thead>
                         <tbody>
                             @foreach($siswaList as $i => $siswa)
-                                @php $bisaDiedit = $isGuruPengampu && $siswa->is_active; @endphp
+                                @php $bisaDiedit = $bisaInput && $siswa->is_active; @endphp
                                 <tr class="border-b dark:border-gray-700 last:border-b-0">
                                     <td class="py-2 px-2 text-gray-500">{{ $i + 1 }}</td>
                                     <td class="py-2 px-2 font-medium">
@@ -206,7 +222,7 @@
                     </table>
                 </div>
 
-                @if($isGuruPengampu)
+                @if($bisaInput)
                     <div class="mt-6">
                         <x-filament::button wire:click="submitProgress">
                             Submit Progress

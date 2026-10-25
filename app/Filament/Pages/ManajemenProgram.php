@@ -139,6 +139,11 @@ class ManajemenProgram extends Page
             ->all();
     }
 
+    public function isTanggalHariIni(): bool
+    {
+        return $this->tanggal === today()->toDateString();
+    }
+
     // =========================================================
     // PRESENSI SISWA (periode tipe: bulan)
     // =========================================================
@@ -166,8 +171,24 @@ class ManajemenProgram extends Page
     {
         abort_unless($this->isGuruPengampu, 403);
 
-        if (! $this->periodeId) {
-            Notification::make()->danger()->title('Pilih periode terlebih dahulu')->send();
+        $hariIni = today()->toDateString();
+
+        if ($this->tanggal !== $hariIni) {
+            Notification::make()->danger()
+                ->title('Presensi hanya dapat diinput pada tanggal hari ini')
+                ->body('Jika tanggal sudah berganti, muat ulang halaman.')
+                ->send();
+            return;
+        }
+
+        // Periode ditentukan server dari tanggal hari ini, bukan dari pilihan di browser
+        $periodeHariIni = $this->cariPeriodeUntukTanggal($hariIni, 'bulan');
+
+        if (! $periodeHariIni) {
+            Notification::make()->danger()
+                ->title('Periode bulan ini belum dibuat')
+                ->body('Hubungi admin untuk membuat periode terlebih dahulu.')
+                ->send();
             return;
         }
 
@@ -183,12 +204,12 @@ class ManajemenProgram extends Page
                 [
                     'kelas_id' => $this->kelas->id,
                     'siswa_id' => $siswaId,
-                    'tanggal' => $this->tanggal,
+                    'tanggal' => $hariIni,
                 ],
                 [
                     'cabang_id' => $this->kelas->cabang_id,
                     'guru_id' => $guruId,
-                    'periode_id' => $this->periodeId,
+                    'periode_id' => $periodeHariIni,
                     'status' => $data['status'],
                     'keterangan' => $data['keterangan'],
                 ],
@@ -218,8 +239,23 @@ class ManajemenProgram extends Page
     {
         abort_unless($this->isGuruPengampu, 403);
 
-        if (! $this->periodeId) {
-            Notification::make()->danger()->title('Pilih periode terlebih dahulu')->send();
+        $hariIni = today()->toDateString();
+
+        if ($this->tanggal !== $hariIni) {
+            Notification::make()->danger()
+                ->title('Progress hanya dapat diinput pada tanggal hari ini')
+                ->body('Jika tanggal sudah berganti, muat ulang halaman.')
+                ->send();
+            return;
+        }
+
+        $periodeHariIni = $this->cariPeriodeUntukTanggal($hariIni, 'bulan');
+
+        if (! $periodeHariIni) {
+            Notification::make()->danger()
+                ->title('Periode bulan ini belum dibuat')
+                ->body('Hubungi admin untuk membuat periode terlebih dahulu.')
+                ->send();
             return;
         }
 
@@ -235,12 +271,12 @@ class ManajemenProgram extends Page
                 [
                     'kelas_id' => $this->kelas->id,
                     'siswa_id' => $siswaId,
-                    'tanggal' => $this->tanggal,
+                    'tanggal' => $hariIni,
                 ],
                 [
                     'cabang_id' => $this->kelas->cabang_id,
                     'guru_id' => $guruId,
-                    'periode_id' => $this->periodeId,
+                    'periode_id' => $periodeHariIni,
                     'catatan' => $catatan,
                 ],
             );
