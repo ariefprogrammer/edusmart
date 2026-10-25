@@ -11,6 +11,9 @@ use App\Models\Siswa;
 use Carbon\CarbonPeriod;
 use Filament\Notifications\Notification;
 use Livewire\Attributes\Locked;
+use App\Exports\LaporanPresensiSiswaExport;
+use Filament\Actions\Action;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class LaporanPresensiSiswa extends Page
 {
@@ -247,5 +250,54 @@ class LaporanPresensiSiswa extends Page
                 'alpa' => $records->where('status', 'alpa')->count(),
             ];
         })->values();
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('exportExcel')
+                ->label('Export Excel')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->extraAttributes([
+                    'style' => 'background-color: #2563eb; color: #ffffff; border-color: #2563eb;',
+                ])
+                ->action(function () {
+                    $rekap = $this->getRekap();
+
+                    if ($rekap->isEmpty()) {
+                        Notification::make()->warning()->title('Tidak ada data untuk diexport')->send();
+                        return;
+                    }
+
+                    $spreadsheet = (new LaporanPresensiSiswaExport())
+                        ->build($rekap, $this->getDateRange(), $this->metaExport());
+
+                    return response()->streamDownload(function () use ($spreadsheet) {
+                        (new Xlsx($spreadsheet))->save('php://output');
+                    }, 'laporan-presensi-siswa-' . now()->format('Y-m-d_His') . '.xlsx');
+                }),
+        ];
+    }
+
+    protected function metaExport(): array
+    {
+        // Sama dengan logika getRekap(): null = semua cabang (hanya super_admin)
+        $cabangIds = $this->isSuperAdmin()
+            ? ($this->cabangId ? [$this->cabangId] : null)
+            : $this->cabangIdsUser();
+
+        $namaCabang = Cabang::query()
+            ->when($cabangIds, fn ($q, $ids) => $q->whereIn('id', $ids))
+            ->pluck('nama_cabang', 'id');
+
+        return [
+            'periode' => \Carbon\Carbon::parse($this->dateStart)->translatedFormat('d F Y')
+                . ' s/d ' . \Carbon\Carbon::parse($this->dateEnd)->translatedFormat('d F Y'),
+            'cabang' => $cabangIds === null ? 'Semua Cabang' : $namaCabang->implode(', '),
+            'program' => $this->kelasId
+                ? (Kelas::find($this->kelasId)?->nama_kelas ?? '-')
+                : 'Semua Program',
+            'namaCabang' => $namaCabang->all(),
+        ];
     }
 }
