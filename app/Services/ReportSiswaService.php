@@ -26,7 +26,7 @@ use App\Support\ReportKosongException;
  * parameter:
  *   bagian               array  subset dari presensi|progress|nilai
  *   periode_bulan_ids    array  id periode tipe "bulan"    (untuk presensi & progress)
- *   periode_semester_ids array  id periode tipe "semester" (untuk nilai)
+ *   periode_bulan_ids    array  id periode tipe "bulan" (untuk presensi, progress, dan nilai)
  *   kelas_id             ?int   batasi ke satu program (opsional)
  *   catatan              ?string catatan bebas untuk report (opsional, tidak masuk `parameter`)
  */
@@ -47,7 +47,7 @@ class ReportSiswaService
         $bagian = $parameter['bagian'];
 
         $periodeBulan = $this->ambilPeriode($siswa, $parameter['periode_bulan_ids'], 'bulan');
-        $periodeSemester = $this->ambilPeriode($siswa, $parameter['periode_semester_ids'], 'semester');
+        // $periodeSemester = $this->ambilPeriode($siswa, $parameter['periode_semester_ids'], 'semester');
         $kelasIds = $this->tentukanKelasIds($parameter['kelas_id'], $user);
 
         $siswa->loadMissing(['cabang', 'waliMurid']);
@@ -72,7 +72,7 @@ class ReportSiswaService
             'bagian' => $bagian,
             'periode' => [
                 'bulan' => $periodeBulan->map(fn (Periode $p) => $this->ringkasPeriode($p))->values()->all(),
-                'semester' => $periodeSemester->map(fn (Periode $p) => $this->ringkasPeriode($p))->values()->all(),
+                // 'semester' => $periodeSemester->map(fn (Periode $p) => $this->ringkasPeriode($p))->values()->all(),
             ],
         ];
 
@@ -85,7 +85,7 @@ class ReportSiswaService
         }
 
         if (in_array('nilai', $bagian, true)) {
-            $data['nilai'] = $this->nilai($siswa, $periodeSemester, $kelasIds);
+            $data['nilai'] = $this->nilai($siswa, $periodeBulan, $kelasIds);
         }
 
         if ($lewatiKosong && ! $this->adaData($data)) {
@@ -98,7 +98,7 @@ class ReportSiswaService
             'siswa_id' => $siswa->id,
             'siswa_nama' => $siswa->nama,
             'cabang_nama' => $siswa->cabang?->nama_cabang,
-            'periode_ringkasan' => $this->ringkasanPeriode($periodeBulan, $periodeSemester),
+            'periode_ringkasan' => $this->ringkasanPeriode($periodeBulan),
             'parameter' => $parameter,
             'data' => $data,
             'schema_version' => self::SCHEMA_VERSION,
@@ -199,24 +199,16 @@ class ReportSiswaService
             ->values()
             ->all();
 
-        $butuhBulan = (bool) array_intersect($bagian, ['presensi', 'progress']);
-        $butuhSemester = in_array('nilai', $bagian, true);
+        // Semua bagian (presensi, progress, nilai) memakai periode bulan
+        $bulanIds = $ids('periode_bulan_ids');
 
-        $bulanIds = $butuhBulan ? $ids('periode_bulan_ids') : [];
-        $semesterIds = $butuhSemester ? $ids('periode_semester_ids') : [];
-
-        if ($butuhBulan && $bulanIds === []) {
+        if ($bulanIds === []) {
             throw ValidationException::withMessages(['periode_bulan_ids' => 'Pilih minimal satu periode bulan.']);
-        }
-
-        if ($butuhSemester && $semesterIds === []) {
-            throw ValidationException::withMessages(['periode_semester_ids' => 'Pilih minimal satu periode semester.']);
         }
 
         return [
             'bagian' => $bagian,
             'periode_bulan_ids' => $bulanIds,
-            'periode_semester_ids' => $semesterIds,
             'kelas_id' => filled($p['kelas_id'] ?? null) ? (int) $p['kelas_id'] : null,
         ];
     }
@@ -237,7 +229,7 @@ class ReportSiswaService
 
         if ($periodes->count() !== count($ids)) {
             throw ValidationException::withMessages([
-                $tipe === 'bulan' ? 'periode_bulan_ids' : 'periode_semester_ids' => 'Ada periode yang tidak valid untuk cabang siswa ini.',
+                'periode_bulan_ids' => 'Ada periode yang tidak valid untuk cabang siswa ini.',
             ]);
         }
 
@@ -469,18 +461,12 @@ class ReportSiswaService
         ];
     }
 
-    private function ringkasanPeriode(Collection $bulan, Collection $semester): ?string
+    private function ringkasanPeriode(Collection $bulan): ?string
     {
-        $bagian = [];
-
-        if ($bulan->isNotEmpty()) {
-            $bagian[] = 'Bulan: '.$bulan->pluck('nama_periode')->implode(', ');
+        if ($bulan->isEmpty()) {
+            return null;
         }
 
-        if ($semester->isNotEmpty()) {
-            $bagian[] = 'Semester: '.$semester->pluck('nama_periode')->implode(', ');
-        }
-
-        return $bagian === [] ? null : Str::limit(implode(' · ', $bagian), 500, '…');
+        return Str::limit('Bulan: '.$bulan->pluck('nama_periode')->implode(', '), 500, '…');
     }
 }

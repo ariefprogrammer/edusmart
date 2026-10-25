@@ -100,7 +100,6 @@ class ReportSiswaResource extends Resource
                 ->afterStateUpdated(function (Set $set) {
                     static::resetSiswa($set);
                     $set('periode_bulan_ids', []);
-                    $set('periode_semester_ids', []);
                 })
                 ->required()
                 ->visible(fn () => count(static::cabangOptions()) > 1)
@@ -192,24 +191,13 @@ class ReportSiswaResource extends Resource
                 ->columnSpanFull(),
 
             Forms\Components\Select::make('periode_bulan_ids')
-                ->label('Periode Bulan (Presensi & Progress)')
-                ->helperText('Bisa pilih lebih dari satu periode.')
+                ->label('Periode Bulan (Presensi, Progress & Nilai)')
+                ->helperText('Bisa pilih lebih dari satu periode. Berlaku untuk semua bagian yang dipilih.')
                 ->multiple()
                 ->searchable()
                 ->preload()
                 ->options(fn (Get $get) => static::periodeOptions(static::resolveCabangId(static::stateDari($get)), 'bulan'))
-                ->visible(fn (Get $get) => (bool) array_intersect((array) $get('bagian'), ['presensi', 'progress']))
-                ->required()
-                ->columnSpanFull(),
-
-            Forms\Components\Select::make('periode_semester_ids')
-                ->label('Periode Semester (Nilai)')
-                ->helperText('Bisa pilih lebih dari satu periode.')
-                ->multiple()
-                ->searchable()
-                ->preload()
-                ->options(fn (Get $get) => static::periodeOptions(static::resolveCabangId(static::stateDari($get)), 'semester'))
-                ->visible(fn (Get $get) => in_array('nilai', (array) $get('bagian'), true))
+                ->visible(fn (Get $get) => filled($get('bagian')))
                 ->required()
                 ->columnSpanFull(),
 
@@ -371,7 +359,6 @@ class ReportSiswaResource extends Resource
         $parameter = [
             'bagian' => $data['bagian'] ?? [],
             'periode_bulan_ids' => $data['periode_bulan_ids'] ?? [],
-            'periode_semester_ids' => $data['periode_semester_ids'] ?? [],
             'kelas_id' => $data['kelas_id'] ?? null,
             'catatan' => $data['catatan'] ?? null,
             'lewati_kosong' => (bool) ($data['lewati_kosong'] ?? false),
@@ -475,6 +462,17 @@ class ReportSiswaResource extends Resource
                 ->danger()
                 ->title('Tidak bisa dibuat ulang')
                 ->body('Data siswa sudah dihapus permanen.')
+                ->send();
+
+            return null;
+        }
+
+        // Report lama yang memuat nilai memakai periode semester, tidak bisa dibuat ulang otomatis
+        if (filled($record->parameter['periode_semester_ids'] ?? null)) {
+            Notification::make()
+                ->warning()
+                ->title('Report ini tidak bisa dibuat ulang')
+                ->body('Bagian nilai pada report ini memakai periode semester. Buat report baru lewat "Buat Report" dengan periode bulan.')
                 ->send();
 
             return null;
