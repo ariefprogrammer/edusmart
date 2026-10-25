@@ -9,6 +9,8 @@ use Filament\Pages\Page;
 use Illuminate\Support\Collection;
 use App\Models\Siswa;
 use Carbon\CarbonPeriod;
+use Filament\Notifications\Notification;
+use Livewire\Attributes\Locked;
 
 class LaporanPresensiSiswa extends Page
 {
@@ -25,6 +27,18 @@ class LaporanPresensiSiswa extends Page
     public ?int $kelasId = null;
 
     public string $statusSiswa = 'aktif';
+    protected const STATUS_VALID = ['hadir', 'izin', 'sakit', 'alpa'];
+
+    #[Locked]
+    public ?int $editSiswaId = null;
+
+    #[Locked]
+    public ?string $editTanggal = null;
+
+    #[Locked]
+    public string $editNamaSiswa = '';
+
+    public array $editRows = [];
 
     public static function canAccess(): bool
     {
@@ -82,6 +96,98 @@ class LaporanPresensiSiswa extends Page
             ->when($cabangId, fn ($q) => $q->where('cabang_id', $cabangId))
             ->orderBy('nama_kelas')
             ->pluck('nama_kelas', 'id');
+    }
+
+    public function bisaUbah(): bool
+    {
+        return auth()->user()?->hasAnyRole(['koordinator_cabang', 'admin_cabang']) ?? false;
+    }
+
+    protected function cabangIdsUser(): array
+    {
+        return auth()->user()->cabang->pluck('id')->all();
+    }
+
+    public function bukaUbah(int $siswaId, string $tanggal): void
+    {
+        abort_unless($this->bisaUbah(), 403);
+        abort_unless(preg_match('/^\d{4}-\d{2}-\d{2}$/', $tanggal) === 1, 422);
+
+        // Isinya sama dengan yang dihitung di sel tabel (termasuk filter program)
+        $records = PresensiSiswa::query()
+            ->where('siswa_id', $siswaId)
+            ->whereDate('tanggal', $tanggal)
+            ->whereIn('cabang_id', $this->cabangIdsUser())
+            ->whereNotNull('kelas_id')
+            ->whereIn('status', self::STATUS_VALID)
+            ->when($this->kelasId, fn ($q) => $q->where('kelas_id', $this->kelasId))
+            ->orderBy('id')
+            ->get();
+
+        if ($records->isEmpty()) {
+            Notification::make()->warning()->title('Data presensi tidak ditemukan')->send();
+            return;
+        }
+
+        $namaKelas = Kelas::whereIn('id', $records->pluck('kelas_id'))->pluck('nama_kelas', 'id');
+
+        $this->editSiswaId = $siswaId;
+        $this->editTanggal = $tanggal;
+        $this->editNamaSiswa = Siswa::find($siswaId)?->nama ?? '-';
+        $this->editRows = $records->mapWithKeys(fn ($r) => [
+            $r->id => [
+                'kelas' => $namaKelas[$r->kelas_id] ?? '-',
+                'status' => $r->status,
+                'keterangan' => $r->keterangan,
+            ],
+        ])->all();
+
+        $this->dispatch('open-modal', id: 'ubah-presensi');
+    }
+
+    public function simpanUbah(): void
+    {
+        abort_unless($this->bisaUbah(), 403);
+
+        if (! $this->editSiswaId || ! $this->editTanggal) {
+            return;
+        }
+
+        $this->validate([
+            'editRows.*.status' => ['required', 'in:' . implode(',', self::STATUS_VALID)],
+        ], [
+            'editRows.*.status.required' => 'Status wajib dipilih.',
+            'editRows.*.status.in' => 'Status tidak valid.',
+        ]);
+
+        // Ambil ulang dari database: hanya data milik siswa, tanggal, dan cabang yang sah
+        $records = PresensiSiswa::query()
+            ->whereIn('id', array_map('intval', array_keys($this->editRows)))
+            ->where('siswa_id', $this->editSiswaId)
+            ->whereDate('tanggal', $this->editTanggal)
+            ->whereIn('cabang_id', $this->cabangIdsUser())
+            ->get();
+
+        $jumlahBerubah = 0;
+
+        foreach ($records as $record) {
+            $statusBaru = $this->editRows[$record->id]['status'];
+
+            if ($record->status !== $statusBaru) {
+                $record->status = $statusBaru;
+                $record->save();
+                $jumlahBerubah++;
+            }
+        }
+
+        $this->dispatch('close-modal', id: 'ubah-presensi');
+
+        $this->reset(['editSiswaId', 'editTanggal', 'editNamaSiswa', 'editRows']);
+
+        Notification::make()
+            ->success()
+            ->title($jumlahBerubah > 0 ? 'Kehadiran berhasil diubah' : 'Tidak ada perubahan')
+            ->send();
     }
 
     public function getDateRange(): array

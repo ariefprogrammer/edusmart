@@ -1,4 +1,14 @@
 <x-filament-panels::page>
+    <style>
+        .presensi-badge-edit {
+            cursor: pointer;
+            border: 0;
+            transition: box-shadow .15s ease;
+        }
+        .presensi-badge-edit:hover {
+            box-shadow: 0 0 0 2px rgb(var(--primary-500));
+        }
+    </style>
     <div class="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mb-4">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
@@ -58,6 +68,13 @@
         @php
             $rekap = $this->getRekap();
             $tanggalList = $this->getDateRange();
+            $bisaUbah = $this->bisaUbah();
+            $badgeStyle = [
+                'hadir' => ['H', '#dbeafe', '#1d4ed8'],
+                'izin' => ['I', '#fef9c3', '#a16207'],
+                'sakit' => ['S', '#dcfce7', '#15803d'],
+                'alpa' => ['A', '#fee2e2', '#b91c1c'],
+            ];
         @endphp
 
         @if($rekap->isEmpty())
@@ -89,14 +106,20 @@
                                 @foreach($tanggalList as $tanggal)
                                     @php $status = $row->harian[$tanggal] ?? null; @endphp
                                     <td class="py-1 px-1 text-center">
-                                        @if($status === 'hadir')
-                                            <span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-semibold" style="background-color:#dbeafe;color:#1d4ed8;">H</span>
-                                        @elseif($status === 'izin')
-                                            <span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-semibold" style="background-color:#fef9c3;color:#a16207;">I</span>
-                                        @elseif($status === 'sakit')
-                                            <span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-semibold" style="background-color:#dcfce7;color:#15803d;">S</span>
-                                        @elseif($status === 'alpa')
-                                            <span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-semibold" style="background-color:#fee2e2;color:#b91c1c;">A</span>
+                                        @if($status && isset($badgeStyle[$status]))
+                                            @php $b = $badgeStyle[$status]; @endphp
+
+                                            @if($bisaUbah)
+                                                <button
+                                                    type="button"
+                                                    wire:click="bukaUbah({{ $row->siswa->id }}, '{{ $tanggal }}')"
+                                                    title="Klik untuk mengubah kehadiran"
+                                                    class="presensi-badge-edit inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-semibold"
+                                                    style="background-color:{{ $b[1] }};color:{{ $b[2] }};"
+                                                >{{ $b[0] }}</button>
+                                            @else
+                                                <span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-semibold" style="background-color:{{ $b[1] }};color:{{ $b[2] }};">{{ $b[0] }}</span>
+                                            @endif
                                         @else
                                             <span class="text-gray-300 dark:text-gray-600">-</span>
                                         @endif
@@ -114,4 +137,49 @@
             </div>
         @endif
     </div>
+
+    <x-filament::modal id="ubah-presensi" width="lg">
+        <x-slot name="heading">Ubah Kehadiran</x-slot>
+
+        <x-slot name="description">
+            {{ $editNamaSiswa }}
+            @if($editTanggal)
+                · {{ \Carbon\Carbon::parse($editTanggal)->translatedFormat('l, d F Y') }}
+            @endif
+        </x-slot>
+
+        <form wire:submit.prevent="simpanUbah" class="space-y-4">
+            @foreach($editRows as $recordId => $row)
+                <div wire:key="ubah-row-{{ $recordId }}">
+                    <p class="text-sm font-medium mb-1">{{ $row['kelas'] }}</p>
+
+                    <x-filament::input.wrapper>
+                        <select wire:model="editRows.{{ $recordId }}.status" class="fi-select-input block w-full border-none bg-transparent py-1.5 text-sm">
+                            <option value="hadir">Hadir</option>
+                            <option value="izin">Izin</option>
+                            <option value="sakit">Sakit</option>
+                            <option value="alpa">Alpa</option>
+                        </select>
+                    </x-filament::input.wrapper>
+
+                    @error("editRows.$recordId.status")
+                        <p class="text-xs text-danger-600 dark:text-danger-400 mt-1">{{ $message }}</p>
+                    @enderror
+
+                    @if(filled($row['keterangan'] ?? null))
+                        <p class="text-xs text-gray-500 mt-1">Keterangan: {{ $row['keterangan'] }}</p>
+                    @endif
+                </div>
+            @endforeach
+
+            <div class="flex justify-end gap-2 pt-2">
+                <x-filament::button type="button" color="gray" x-on:click="$dispatch('close-modal', { id: 'ubah-presensi' })">
+                    Batal
+                </x-filament::button>
+                <x-filament::button type="submit">
+                    Simpan
+                </x-filament::button>
+            </div>
+        </form>
+    </x-filament::modal>
 </x-filament-panels::page>
