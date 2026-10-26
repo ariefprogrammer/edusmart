@@ -4,7 +4,9 @@ namespace App\Filament\Resources\JadwalResource\Pages;
 
 use App\Filament\Resources\JadwalResource;
 use App\Models\Jadwal;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
+use Filament\Support\Exceptions\Halt;
 use Illuminate\Database\Eloquent\Model;
 
 class CreateJadwal extends CreateRecord
@@ -24,6 +26,38 @@ class CreateJadwal extends CreateRecord
     {
         $hariList = $data['hari_list'] ?? [];
         unset($data['hari_list']);
+
+        // Lapis kedua: cek bentrok guru / kelas sebelum satu pun jadwal disimpan.
+        // Jadwal nonaktif tidak dicek karena tidak dihitung sebagai bentrok.
+        if ($data['is_active'] ?? false) {
+            $pesan = [];
+
+            foreach ($hariList as $hari) {
+                $bentrok = Jadwal::pesanBentrok(
+                    $data['cabang_id'],
+                    $data['guru_id'],
+                    $data['kelas_id'],
+                    $hari,
+                    $data['jam_mulai'],
+                    $data['jam_selesai'],
+                );
+
+                if ($bentrok) {
+                    $pesan[] = $bentrok;
+                }
+            }
+
+            if ($pesan) {
+                Notification::make()
+                    ->danger()
+                    ->title('Jadwal bentrok, tidak ada jadwal yang disimpan')
+                    ->body(implode(' ', $pesan))
+                    ->persistent()
+                    ->send();
+
+                throw new Halt();
+            }
+        }
 
         $records = collect($hariList)->map(
             fn (string $hari) => Jadwal::updateOrCreate(

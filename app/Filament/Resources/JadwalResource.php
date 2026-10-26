@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\JadwalResource\Pages;
 use App\Filament\Resources\JadwalResource\RelationManagers;
 use App\Models\Jadwal;
+use Carbon\Carbon;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -116,7 +117,57 @@ class JadwalResource extends Resource
                     )
                     ->searchable()
                     ->preload()
-                    ->required(),
+                    ->required()
+                    // Server: tolak penyimpanan kalau guru (atau kelas) bentrok dengan jadwal aktif lain
+                    // pada hari yang sama dan rentang jam yang beririsan. Jam yang hanya bersinggungan
+                    // (selesai 09:00, mulai 09:00) tidak dianggap bentrok. Jadwal nonaktif tidak dicek.
+                    ->rule(fn (Get $get, ?Model $record, string $operation): Closure => function (string $attribute, $value, Closure $fail) use ($get, $record, $operation) {
+                        $jamMulai = $get('jam_mulai');
+                        $jamSelesai = $get('jam_selesai');
+                        $kelasId = $get('kelas_id');
+                        $cabangId = $get('cabang_id') ?? $record?->cabang_id ?? auth()->user()->cabang->first()?->id;
+
+                        // Jadwal nonaktif tidak dihitung bentrok (baru dicek saat diaktifkan)
+                        if (! $get('is_active')) {
+                            return;
+                        }
+
+                        // Field yang kosong / jam yang tidak valid ditangani validasi field masing-masing
+                        if (blank($value) || blank($kelasId) || blank($cabangId) || blank($jamMulai) || blank($jamSelesai)) {
+                            return;
+                        }
+
+                        if (Carbon::parse($jamSelesai)->lte(Carbon::parse($jamMulai))) {
+                            return;
+                        }
+
+                        // Create: banyak hari dari checkbox. Edit: satu hari dari select.
+                        $hariList = $operation === 'create'
+                            ? ($get('hari_list') ?? [])
+                            : [$get('hari')];
+
+                        $pesan = [];
+
+                        foreach (array_filter($hariList) as $hari) {
+                            $bentrok = Jadwal::pesanBentrok(
+                                $cabangId,
+                                $value,
+                                $kelasId,
+                                $hari,
+                                $jamMulai,
+                                $jamSelesai,
+                                $record?->getKey(),
+                            );
+
+                            if ($bentrok) {
+                                $pesan[] = $bentrok;
+                            }
+                        }
+
+                        if ($pesan) {
+                            $fail(implode(' ', $pesan));
+                        }
+                    }),
 
                 Forms\Components\Fieldset::make('Pilihan Hari')
                 ->schema([
