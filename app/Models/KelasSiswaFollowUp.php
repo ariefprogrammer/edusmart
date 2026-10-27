@@ -26,4 +26,9 @@ class KelasSiswaFollowUp extends Model
     {
         return $this->belongsTo(KelasSiswa::class, 'kelas_siswa_id');
     }
+
+    public function diubahOleh(): BelongsTo
+    {
+        return $this->belongsTo(config('auth.providers.users.model'), 'diubah_oleh');
+    }
 }

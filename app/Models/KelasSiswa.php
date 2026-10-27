@@ -41,6 +41,19 @@ class KelasSiswa extends Pivot
             ->orderBy('id');
     }
 
+    public function timeline(): \Illuminate\Support\Collection
+    {
+        $status = $this->riwayat->each(fn ($item) => $item->setAttribute('jenis', 'status'));
+        $followUp = $this->followUp->each(fn ($item) => $item->setAttribute('jenis', 'follow_up'));
+
+        // Urut: tanggal, lalu status sebelum follow-up pada hari yang sama, lalu id
+        return $status->toBase()
+            ->concat($followUp)
+            ->sort(fn ($a, $b) => [$a->tanggal->timestamp, $a->jenis === 'status' ? 0 : 1, $a->id]
+                <=> [$b->tanggal->timestamp, $b->jenis === 'status' ? 0 : 1, $b->id])
+            ->values();
+    }
+
     protected static function booted(): void
     {
         static::created(function (KelasSiswa $pivot) {

@@ -10,12 +10,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use App\Models\Concerns\HasUuid;
 use App\Models\KelasSiswa;
+use Illuminate\Support\Facades\DB;
 
 class Siswa extends Model
 {
     use SoftDeletes, FormatsIndonesianPhoneNumber, HasUuid;
 
     protected $table = 'siswa';
+
+    public const STATUS_NONAKTIF = ['cuti', 'keluar'];
 
     protected $fillable = [
         'uuid', 'cabang_id', 'wali_murid_id', 'nama', 'tanggal_lahir',
@@ -80,6 +83,46 @@ class Siswa extends Model
                     'diubah_oleh' => auth()->id(),
                 ]);
             }
+        });
+
+        static::updated(function (Siswa $siswa) {
+            $dimatikan = $siswa->wasChanged('is_active') && ! $siswa->is_active;
+            $statusNonaktif = $siswa->wasChanged('status')
+                && in_array($siswa->status, self::STATUS_NONAKTIF, true);
+
+            if ($dimatikan || $statusNonaktif) {
+                $alasan = $statusNonaktif
+                    ? "Status siswa diubah menjadi {$siswa->status}"
+                    : 'Siswa dinonaktifkan';
+
+                $siswa->nonaktifkanSemuaProgramAktif($alasan . ' (otomatis)');
+            }
+        });
+    }
+
+    /** Siswa dianggap tidak aktif jika toggle mati atau status cuti/keluar. */
+    public function sedangTidakAktif(): bool
+    {
+        return ! $this->is_active || in_array($this->status, self::STATUS_NONAKTIF, true);
+    }
+
+    /** Nonaktifkan semua program aktif lewat model pivot, supaya riwayat tercatat. */
+    public function nonaktifkanSemuaProgramAktif(?string $keterangan = null): int
+    {
+        return DB::transaction(function () use ($keterangan) {
+            $pivots = KelasSiswa::query()
+                ->where('siswa_id', $this->getKey())
+                ->where('is_active', true)
+                ->get();
+
+            foreach ($pivots as $pivot) {
+                $pivot->tanggalPerubahan = today()->toDateString();
+                $pivot->keteranganPerubahan = $keterangan;
+                $pivot->is_active = false;
+                $pivot->save(); // event updating di KelasSiswa mencatat ke kelas_siswa_detail
+            }
+
+            return $pivots->count();
         });
     }
 

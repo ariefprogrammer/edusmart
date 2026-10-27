@@ -46,6 +46,12 @@ class SiswaResource extends Resource
             ->all();
     }
 
+    protected static function siswaTidakAktifDiForm(Get $get): bool
+    {
+        return ! (bool) $get('is_active')
+            || in_array($get('status'), Siswa::STATUS_NONAKTIF, true);
+    }
+
     public static function form(Form $form): Form
     {
         $idPenuh = null;
@@ -80,7 +86,11 @@ class SiswaResource extends Resource
                 ->multiple()
                 ->searchable()
                 ->preload()
-                ->required()
+                // Wajib saat membuat siswa; saat edit hanya wajib jika siswa aktif
+                ->required(fn (Get $get, ?Model $record): bool => ! $record?->exists || ! self::siswaTidakAktifDiForm($get))
+                ->helperText(fn (Get $get, ?Model $record) => $record?->exists && self::siswaTidakAktifDiForm($get)
+                    ? 'Siswa tidak aktif/cuti/keluar: program yang masih aktif akan dinonaktifkan otomatis saat disimpan.'
+                    : null)
                 // Nilai awal di form edit: hanya program yang pivot-nya masih aktif
                 ->loadStateFromRelationshipsUsing(function (Select $component, ?Model $record) {
                     $component->state(self::programAktifSiswa($record));
@@ -95,14 +105,20 @@ class SiswaResource extends Resource
                     // Program yang saat ini aktif
                     $aktif = collect(self::programAktifSiswa($record));
 
-                    // 1. Program yang belum pernah diikuti -> catat bergabung hari ini
-                    foreach ($dipilih->diff($semuaPernah) as $id) {
-                        $relasi->attach($id, ['tanggal_gabung' => now(), 'is_active' => true]);
-                    }
+                    // Siswa tidak aktif/cuti/keluar tidak boleh mendapat program aktif dari form ini.
+                    // Saat siswa dinonaktifkan, program aktifnya sudah dimatikan oleh model Siswa.
+                    $bolehAktifkan = $record->wasRecentlyCreated || ! $record->sedangTidakAktif();
 
-                    // 2. Program lama (sebelumnya nonaktif) yang dipilih lagi -> aktifkan kembali
-                    foreach ($dipilih->intersect($semuaPernah)->diff($aktif) as $id) {
-                        $relasi->updateExistingPivot($id, ['is_active' => true]);
+                    if ($bolehAktifkan) {
+                        // 1. Program yang belum pernah diikuti -> catat bergabung hari ini
+                        foreach ($dipilih->diff($semuaPernah) as $id) {
+                            $relasi->attach($id, ['tanggal_gabung' => now(), 'is_active' => true]);
+                        }
+
+                        // 2. Program lama (sebelumnya nonaktif) yang dipilih lagi -> aktifkan kembali
+                        foreach ($dipilih->intersect($semuaPernah)->diff($aktif) as $id) {
+                            $relasi->updateExistingPivot($id, ['is_active' => true]);
+                        }
                     }
 
                     // 3. Program yang dilepas -> nonaktifkan, riwayat tidak dihapus
@@ -117,8 +133,10 @@ class SiswaResource extends Resource
                     return in_array($id, $ambilIdPenuh(), true)
                         && ! in_array($id, $ambilIdAktifSiswa($record), true);
                 })
-                // Server: tolak penyimpanan kalau ada program penuh yang akan ditambahkan
-                ->rule(fn (?Model $record): Closure => function (string $attribute, $value, Closure $fail) use ($record) {
+                // Server: tolak program baru untuk siswa tidak aktif, dan program yang kuotanya penuh
+                ->rule(fn (?Model $record, Get $get): Closure => function (string $attribute, $value, Closure $fail) use ($record, $get) {
+                    $tidakAktifDiForm = $record?->exists && self::siswaTidakAktifDiForm($get);
+
                     $dipilih = collect($value ?? [])->map(fn ($id) => (int) $id);
                     $akanDitambah = $dipilih
                         ->diff(self::programAktifSiswa($record))
@@ -126,6 +144,12 @@ class SiswaResource extends Resource
                         ->all();
 
                     if ($akanDitambah === []) {
+                        return;
+                    }
+
+                    if ($tidakAktifDiForm) {
+                        $fail('Siswa sedang tidak aktif, cuti, atau keluar. Aktifkan siswa (toggle aktif dan status) sebelum menambah atau mengaktifkan program.');
+
                         return;
                     }
 
@@ -157,7 +181,8 @@ class SiswaResource extends Resource
                     'keluar' => 'Keluar',
                 ])
                 ->default('aktif')
-                ->required(),
+                ->required()
+                ->live(),
 
             DatePicker::make('tanggal_daftar')
                 ->native(false)
@@ -166,7 +191,8 @@ class SiswaResource extends Resource
 
             Toggle::make('is_active')
                 ->default(true)
-                ->required(),
+                ->required()
+                ->live(),
 
             Fieldset::make('Data Wali Murid')
                 ->relationship('waliMurid')
