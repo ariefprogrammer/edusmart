@@ -9,6 +9,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\HtmlString;
 
 class SiswaRelationManager extends RelationManager
 {
@@ -181,6 +182,25 @@ class SiswaRelationManager extends RelationManager
 
                 Tables\Actions\DetachAction::make()
                     ->label('Keluarkan')
+                    ->icon('heroicon-o-exclamation-triangle')
+                    ->requiresConfirmation()
+                    ->modalIcon('heroicon-o-exclamation-triangle')
+                    ->modalHeading(fn ($record) => 'Keluarkan ' . $record->nama . ' dari program ini?')
+                    ->modalDescription(function ($record) {
+                        $jumlahRiwayat = $record->pivot->riwayat->count();
+
+                        return new HtmlString(
+                            '<p><strong>Fitur ini hanya untuk koreksi salah input.</strong> '
+                            . 'Jika siswa berhenti atau keluar, gunakan tombol <em>Update / CRM</em> agar riwayatnya tetap tersimpan.</p>'
+                            . '<p class="mt-2">Jika dilanjutkan:</p>'
+                            . '<ul class="list-disc ms-5 mt-1">'
+                            . "<li>{$jumlahRiwayat} catatan riwayat siswa di program ini akan <strong>dihapus permanen</strong>.</li>"
+                            . '<li>Tanggal gabung hilang dan tindakan ini <strong>tidak bisa dibatalkan</strong>.</li>'
+                            . '<li>Siswa ini tidak akan lagi terhitung di laporan periode lalu untuk program ini.</li>'
+                            . '</ul>'
+                        );
+                    })
+                    ->modalSubmitActionLabel('Ya, keluarkan permanen')
                     ->before(function ($record, Tables\Actions\DetachAction $action) {
                         // Hitung semua program lain, aktif maupun nonaktif
                         $punyaProgramLain = $record->kelasList()
