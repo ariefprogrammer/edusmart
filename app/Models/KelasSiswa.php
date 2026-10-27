@@ -29,7 +29,16 @@ class KelasSiswa extends Pivot
 
     public function riwayat(): HasMany
     {
-        return $this->hasMany(KelasSiswaDetail::class, 'kelas_siswa_id')->orderBy('tanggal');
+        return $this->hasMany(KelasSiswaDetail::class, 'kelas_siswa_id')
+            ->orderBy('tanggal')
+            ->orderBy('id');
+    }
+
+    public function followUp(): HasMany
+    {
+        return $this->hasMany(KelasSiswaFollowUp::class, 'kelas_siswa_id')
+            ->orderBy('tanggal')
+            ->orderBy('id');
     }
 
     protected static function booted(): void

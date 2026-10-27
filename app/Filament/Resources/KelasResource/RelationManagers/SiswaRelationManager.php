@@ -9,6 +9,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Collection;
 use Illuminate\Support\HtmlString;
 
 class SiswaRelationManager extends RelationManager
@@ -186,20 +187,7 @@ class SiswaRelationManager extends RelationManager
                     ->requiresConfirmation()
                     ->modalIcon('heroicon-o-exclamation-triangle')
                     ->modalHeading(fn ($record) => 'Keluarkan ' . $record->nama . ' dari program ini?')
-                    ->modalDescription(function ($record) {
-                        $jumlahRiwayat = $record->pivot->riwayat->count();
-
-                        return new HtmlString(
-                            '<p><strong>Fitur ini hanya untuk koreksi salah input.</strong> '
-                            . 'Jika siswa berhenti atau keluar, gunakan tombol <em>Update / CRM</em> agar riwayatnya tetap tersimpan.</p>'
-                            . '<p class="mt-2">Jika dilanjutkan:</p>'
-                            . '<ul class="list-disc ms-5 mt-1">'
-                            . "<li>{$jumlahRiwayat} catatan riwayat siswa di program ini akan <strong>dihapus permanen</strong>.</li>"
-                            . '<li>Tanggal gabung hilang dan tindakan ini <strong>tidak bisa dibatalkan</strong>.</li>'
-                            . '<li>Siswa ini tidak akan lagi terhitung di laporan periode lalu untuk program ini.</li>'
-                            . '</ul>'
-                        );
-                    })
+                    ->modalDescription(fn ($record) => $this->peringatanKeluarkan($record->pivot->riwayat->count()))
                     ->modalSubmitActionLabel('Ya, keluarkan permanen')
                     ->before(function ($record, Tables\Actions\DetachAction $action) {
                         // Hitung semua program lain, aktif maupun nonaktif
@@ -219,7 +207,64 @@ class SiswaRelationManager extends RelationManager
                     }),
             ])
             ->bulkActions([
-                Tables\Actions\DetachBulkAction::make(),
+                Tables\Actions\DetachBulkAction::make()
+                    ->label('Keluarkan yang dipilih')
+                    ->icon('heroicon-o-exclamation-triangle')
+                    ->requiresConfirmation()
+                    ->modalIcon('heroicon-o-exclamation-triangle')
+                    ->modalHeading(fn (Collection $records) => "Keluarkan {$records->count()} siswa dari program ini?")
+                    ->modalDescription(fn (Collection $records) => $this->peringatanKeluarkan(
+                        $this->hitungRiwayat($records)
+                    ))
+                    ->modalSubmitActionLabel('Ya, keluarkan permanen')
+                    ->before(function (Collection $records, Tables\Actions\DetachBulkAction $action) {
+                        $kelasId = $this->getOwnerRecord()->getKey();
+
+                        // Siswa yang tidak punya program lain (aktif maupun nonaktif)
+                        $tanpaProgramLain = $records->filter(
+                            fn ($siswa) => ! $siswa->kelasList()->where('kelas.id', '!=', $kelasId)->exists()
+                        );
+
+                        if ($tanpaProgramLain->isNotEmpty()) {
+                            Notification::make()
+                                ->title('Pengeluaran dibatalkan')
+                                ->body(
+                                    'Setiap siswa harus terdaftar minimal di satu program. '
+                                    . 'Siswa berikut tidak punya program lain: '
+                                    . $tanpaProgramLain->pluck('nama')->join(', ')
+                                    . '. Tidak ada siswa yang dikeluarkan.'
+                                )
+                                ->danger()
+                                ->persistent()
+                                ->send();
+
+                            $action->halt();
+                        }
+                    }),
             ]);
+    }
+
+    protected function hitungRiwayat(Collection $records): int
+    {
+        // Ambil lewat relasi supaya data pivot ikut terisi
+        return $this->getOwnerRecord()
+            ->siswa()
+            ->whereKey($records->modelKeys())
+            ->get()
+            ->sum(fn ($siswa) => $siswa->pivot->riwayat->count());
+    }
+
+    protected function peringatanKeluarkan(int $jumlahRiwayat): HtmlString
+    {
+        return new HtmlString(
+            '<p><strong>Fitur ini hanya untuk koreksi salah input.</strong> '
+            . 'Jika siswa berhenti atau keluar, gunakan tombol <em>Update / CRM</em> agar riwayatnya tetap tersimpan.</p>'
+            . '<p style="margin-top: 0.5rem;">Jika dilanjutkan:</p>'
+            . '<ul style="list-style: disc; margin: 0.25rem 0 0 1.25rem;">'
+            . "<li>{$jumlahRiwayat} catatan riwayat di program ini akan <strong>dihapus permanen</strong>.</li>"
+            . '<li>Tanggal gabung hilang dan tindakan ini <strong>tidak bisa dibatalkan</strong>.</li>'
+            . '<li>Siswa yang dikeluarkan tidak akan lagi terhitung di laporan periode lalu untuk program ini.</li>'
+            . '</ul>'
+        );
     }
 }

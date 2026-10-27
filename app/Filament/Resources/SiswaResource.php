@@ -102,7 +102,7 @@ class SiswaResource extends Resource
 
                     // 2. Program lama (sebelumnya nonaktif) yang dipilih lagi -> aktifkan kembali
                     foreach ($dipilih->intersect($semuaPernah)->diff($aktif) as $id) {
-                        $relasi->updateExistingPivot($id, ['tanggal_gabung' => now(), 'is_active' => true]);
+                        $relasi->updateExistingPivot($id, ['is_active' => true]);
                     }
 
                     // 3. Program yang dilepas -> nonaktifkan, riwayat tidak dihapus
