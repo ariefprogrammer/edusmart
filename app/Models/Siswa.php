@@ -55,6 +55,11 @@ class Siswa extends Model
             ->withTimestamps();
     }
 
+    public function kelasAktif()
+    {
+        return $this->kelasList()->wherePivot('is_active', true);
+    }
+
     protected static function booted(): void
     {
         static::created(function (Siswa $siswa) {

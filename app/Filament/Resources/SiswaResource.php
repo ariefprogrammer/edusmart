@@ -207,7 +207,7 @@ class SiswaResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('nama')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('kelasList.nama_kelas')
+                Tables\Columns\TextColumn::make('kelasAktif.nama_kelas')
                     ->label('Program')
                     ->badge()
                     ->separator(','),

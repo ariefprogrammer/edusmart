@@ -8,6 +8,7 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\DB;
 
 class SiswaRelationManager extends RelationManager
 {
@@ -138,12 +139,33 @@ class SiswaRelationManager extends RelationManager
                         }
                     })
                     ->using(function ($record, array $data) {
-                        $record->pivot->tanggalPerubahan = $data['tanggal_perubahan'] ?? now();
-                        $record->pivot->keteranganPerubahan = $data['keterangan'] ?? null;
-                        $record->pivot->is_active = $data['is_active'];
-                        $record->pivot->save();
+                        return DB::transaction(function () use ($record, $data) {
+                            $record->pivot->tanggalPerubahan = $data['tanggal_perubahan'] ?? now();
+                            $record->pivot->keteranganPerubahan = $data['keterangan'] ?? null;
+                            $record->pivot->is_active = $data['is_active'];
+                            $record->pivot->save();
 
-                        return $record;
+                            if ($data['is_active']) {
+                                // Program diaktifkan: jika siswa masih nonaktif, aktifkan juga siswanya
+                                if (! $record->is_active) {
+                                    $record->is_active = true;
+                                    $record->save();
+                                }
+                            } else {
+                                // Program dinonaktifkan: jika tidak ada program aktif lain, nonaktifkan siswanya
+                                $masihPunyaProgramAktif = $record->kelasList()
+                                    ->wherePivot('is_active', true)
+                                    ->where('kelas.id', '!=', $this->getOwnerRecord()->getKey())
+                                    ->exists();
+
+                                if (! $masihPunyaProgramAktif) {
+                                    $record->is_active = false;
+                                    $record->save();
+                                }
+                            }
+
+                            return $record;
+                        });
                     }),
 
                 Tables\Actions\Action::make('riwayat')
@@ -158,7 +180,23 @@ class SiswaRelationManager extends RelationManager
                     ->modalCancelActionLabel('Tutup'),
 
                 Tables\Actions\DetachAction::make()
-                    ->label('Keluarkan'),
+                    ->label('Keluarkan')
+                    ->before(function ($record, Tables\Actions\DetachAction $action) {
+                        // Hitung semua program lain, aktif maupun nonaktif
+                        $punyaProgramLain = $record->kelasList()
+                            ->where('kelas.id', '!=', $this->getOwnerRecord()->getKey())
+                            ->exists();
+
+                        if (! $punyaProgramLain) {
+                            Notification::make()
+                                ->title('Siswa tidak dapat dikeluarkan')
+                                ->body('Setiap siswa harus terdaftar minimal di satu program (aktif maupun nonaktif).')
+                                ->danger()
+                                ->send();
+
+                            $action->halt();
+                        }
+                    }),
             ])
             ->bulkActions([
                 Tables\Actions\DetachBulkAction::make(),
