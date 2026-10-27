@@ -13,6 +13,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\HtmlString;
 use App\Models\KelasSiswaFollowUp;
 use Filament\Forms\Get;
+use App\Models\Siswa;
 
 class SiswaRelationManager extends RelationManager
 {
@@ -182,7 +183,9 @@ class SiswaRelationManager extends RelationManager
                         }
                     })
                     ->using(function ($record, array $data) {
-                        return DB::transaction(function () use ($record, $data) {
+                        $statusDikembalikan = false;
+
+                        $hasil = DB::transaction(function () use ($record, $data, &$statusDikembalikan) {
                             // Follow-up: hanya menulis ke tabel follow-up, status tidak disentuh
                             if (($data['aksi'] ?? 'ubah_status') === 'follow_up') {
                                 $record->pivot->followUp()->create([
@@ -195,15 +198,23 @@ class SiswaRelationManager extends RelationManager
                                 return $record;
                             }
 
-                            $record->pivot->tanggalPerubahan = $data['tanggal_perubahan'] ?? now();
+                            $record->pivot->tanggalPerubahan = $data['tanggal_perubahan'] ?? now()->toDateString();
                             $record->pivot->keteranganPerubahan = $data['keterangan'] ?? null;
                             $record->pivot->is_active = $data['is_active'];
                             $record->pivot->save();
 
                             if ($data['is_active']) {
-                                // Program diaktifkan: jika siswa masih nonaktif, aktifkan juga siswanya
-                                if (! $record->is_active) {
+                                // Program diaktifkan: siswa yang masih nonaktif atau berstatus cuti/keluar ikut diaktifkan
+                                $statusNonaktif = in_array($record->status, Siswa::STATUS_NONAKTIF, true);
+
+                                if (! $record->is_active || $statusNonaktif) {
                                     $record->is_active = true;
+
+                                    if ($statusNonaktif) {
+                                        $record->status = 'aktif';
+                                        $statusDikembalikan = true;
+                                    }
+
                                     $record->save();
                                 }
                             } else {
@@ -221,6 +232,16 @@ class SiswaRelationManager extends RelationManager
 
                             return $record;
                         });
+
+                        if ($statusDikembalikan) {
+                            Notification::make()
+                                ->title('Status siswa dikembalikan ke aktif')
+                                ->body($hasil->nama . ' sebelumnya berstatus cuti/keluar, sehingga status siswa ikut diubah menjadi aktif.')
+                                ->info()
+                                ->send();
+                        }
+
+                        return $hasil;
                     }),
 
                 Tables\Actions\Action::make('riwayat')
