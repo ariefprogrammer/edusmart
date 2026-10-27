@@ -81,7 +81,35 @@ class SiswaResource extends Resource
                 ->searchable()
                 ->preload()
                 ->required()
-                ->pivotData(['tanggal_gabung' => now(), 'is_active' => true])
+                // Nilai awal di form edit: hanya program yang pivot-nya masih aktif
+                ->loadStateFromRelationshipsUsing(function (Select $component, ?Model $record) {
+                    $component->state(self::programAktifSiswa($record));
+                })
+                // Penyimpanan manual: riwayat lama tidak ditimpa, program yang dilepas dinonaktifkan
+                ->saveRelationshipsUsing(function (Model $record, $state) {
+                    $dipilih = collect($state ?? [])->map(fn ($id) => (int) $id);
+                    $relasi  = $record->kelasList();
+
+                    // Semua program yang pernah diikuti (aktif + nonaktif)
+                    $semuaPernah = $relasi->pluck('kelas.id')->map(fn ($id) => (int) $id);
+                    // Program yang saat ini aktif
+                    $aktif = collect(self::programAktifSiswa($record));
+
+                    // 1. Program yang belum pernah diikuti -> catat bergabung hari ini
+                    foreach ($dipilih->diff($semuaPernah) as $id) {
+                        $relasi->attach($id, ['tanggal_gabung' => now(), 'is_active' => true]);
+                    }
+
+                    // 2. Program lama (sebelumnya nonaktif) yang dipilih lagi -> aktifkan kembali
+                    foreach ($dipilih->intersect($semuaPernah)->diff($aktif) as $id) {
+                        $relasi->updateExistingPivot($id, ['tanggal_gabung' => now(), 'is_active' => true]);
+                    }
+
+                    // 3. Program yang dilepas -> nonaktifkan, riwayat tidak dihapus
+                    foreach ($aktif->diff($dipilih) as $id) {
+                        $relasi->updateExistingPivot($id, ['is_active' => false]);
+                    }
+                })
                 // Tampilan: program penuh tidak bisa dipilih, kecuali siswa ini sudah aktif di sana
                 ->disableOptionWhen(function (string $value, ?Model $record) use ($ambilIdPenuh, $ambilIdAktifSiswa) {
                     $id = (int) $value;
