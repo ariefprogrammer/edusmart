@@ -17,6 +17,8 @@ use Filament\Pages\Page;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
+use Livewire\WithPagination;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 class LaporanSiswaAktif extends Page implements HasForms
 {
@@ -33,6 +35,9 @@ class LaporanSiswaAktif extends Page implements HasForms
     public ?array $data = [];
     public string $filterStatus = 'semua';
     public string $cari = '';
+
+    use WithPagination;
+    public int $perPage = 20;
 
     public static function canAccess(): bool
     {
@@ -101,6 +106,35 @@ class LaporanSiswaAktif extends Page implements HasForms
             ->when($this->filterStatus !== 'semua', fn ($c) => $c->where('status', $this->filterStatus))
             ->when($kata !== '', fn ($c) => $c->filter(fn ($s) => str_contains(mb_strtolower($s['nama']), $kata)))
             ->values();
+    }
+
+    public function updatingFilterStatus(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatingCari(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatingPerPage(): void
+    {
+        $this->resetPage();
+    }
+
+    public function getSiswaHalamanProperty(): LengthAwarePaginator
+    {
+        $semua = $this->siswaTampil;
+        $halaman = $this->getPage();
+
+        return new LengthAwarePaginator(
+            $semua->forPage($halaman, $this->perPage)->values(),
+            $semua->count(),
+            $this->perPage,
+            $halaman,
+            ['path' => request()->url()]
+        );
     }
 
     protected function isSuperAdmin(): bool

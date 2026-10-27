@@ -111,6 +111,9 @@
     </x-filament::section>
 
     <x-filament::section heading="Detail siswa">
+        @php
+            $halaman = $this->siswaHalaman;
+        @endphp
         <style>
             .tbl-siswa { width: 100%; min-width: 640px; border-collapse: separate; border-spacing: 0; font-size: 14px; }
             .tbl-siswa th { text-align: left; padding: 10px 14px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; background: rgba(128,128,128,.1); border-bottom: 1px solid rgba(128,128,128,.3); }
@@ -138,7 +141,7 @@
             >
 
             <span style="margin-left: auto; font-size: 15px; opacity: .7; margin-top: 5px;">
-                Menampilkan {{ $this->siswaTampil->count() }} siswa
+                Menampilkan {{ $halaman->firstItem() ?? 0 }}–{{ $halaman->lastItem() ?? 0 }} dari {{ $halaman->total() }} siswa
             </span>
         </div>
 
@@ -153,7 +156,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @forelse($this->siswaTampil as $siswa)
+                    @forelse($halaman as $siswa)
                         @php
                             $aktif = $siswa['status'] === 'aktif';
                             $warna = $warnaGerak[$siswa['gerak']] ?? null;
@@ -216,6 +219,13 @@
                     @endforelse
                 </tbody>
             </table>
+        </div>
+        <div style="margin-top: 16px;">
+            <x-filament::pagination
+                :paginator="$halaman"
+                :page-options="[10, 20, 50, 100]"
+                current-page-option-property="perPage"
+            />
         </div>
     </x-filament::section>
 </x-filament-panels::page>
