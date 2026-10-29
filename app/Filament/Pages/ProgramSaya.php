@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Collection;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use App\Models\JadwalPengganti;
 
 class ProgramSaya extends Page
 {
@@ -42,6 +43,25 @@ class ProgramSaya extends Page
                 'siswa' => fn (BelongsToMany $q) => $q->orderBy('nama'),
             ])
             ->withCount(['siswa as siswa_aktif_count' => fn (Builder $q) => $q->where('kelas_siswa.is_active', true)])
+            ->get();
+    }
+
+    public function getJadwalPenggantiList(): Collection
+    {
+        $guruId = auth()->user()->guru?->id;
+
+        if (! $guruId) {
+            return collect();
+        }
+
+        return JadwalPengganti::query()
+            ->with(['kelas', 'cabang'])
+            ->withCount('siswa')
+            ->where('guru_id', $guruId)
+            ->where('status', JadwalPengganti::STATUS_TERJADWAL)
+            ->whereDate('tanggal_pengganti', '>=', today()->toDateString())
+            ->orderBy('tanggal_pengganti')
+            ->orderBy('jam_mulai')
             ->get();
     }
 }
