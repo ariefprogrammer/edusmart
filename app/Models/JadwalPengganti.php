@@ -16,6 +16,7 @@ class JadwalPengganti extends Model
     public const STATUS_TERJADWAL = 'terjadwal';
     public const STATUS_SELESAI = 'selesai';
     public const STATUS_DIBATALKAN = 'dibatalkan';
+    public const TEKS_PENANDA = 'dilaksanakan pertemuan pengganti';
 
     protected $fillable = [
         'cabang_id', 'kelas_id', 'jadwal_id', 'guru_id',
@@ -57,6 +58,7 @@ class JadwalPengganti extends Model
     public function siswa(): BelongsToMany
     {
         return $this->belongsToMany(Siswa::class, 'jadwal_pengganti_siswa', 'jadwal_pengganti_id', 'siswa_id')
+            ->withPivot('presensi_disimpan_pada')
             ->withTimestamps();
     }
 
@@ -207,5 +209,28 @@ class JadwalPengganti extends Model
         }
 
         return $pesan ? implode(' ', $pesan) : null;
+    }
+
+    /** Catatan guru + penanda; jika catatan kosong hanya penanda. */
+    public static function gabungKeterangan(?string $catatan): string
+    {
+        $catatan = trim((string) $catatan);
+
+        return $catatan === '' ? self::TEKS_PENANDA : $catatan . ' — ' . self::TEKS_PENANDA;
+    }
+
+    /** Kebalikan gabungKeterangan: hanya catatan guru, untuk ditampilkan lagi di form. */
+    public static function ambilCatatan(?string $keterangan): string
+    {
+        $keterangan = trim((string) $keterangan);
+        $akhiran = ' — ' . self::TEKS_PENANDA;
+
+        if ($keterangan === self::TEKS_PENANDA) {
+            return '';
+        }
+
+        return str_ends_with($keterangan, $akhiran)
+            ? substr($keterangan, 0, -strlen($akhiran))
+            : $keterangan;
     }
 }

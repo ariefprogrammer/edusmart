@@ -9,7 +9,7 @@ class ProgressSiswa extends Model
 {
     protected $table = 'progress_siswa';
 
-    protected $fillable = ['cabang_id', 'kelas_id', 'siswa_id', 'guru_id', 'tanggal', 'periode_id', 'catatan'];
+    protected $fillable = ['cabang_id', 'kelas_id', 'siswa_id', 'guru_id', 'tanggal', 'periode_id', 'catatan', 'keterangan_pengganti'];
 
     protected $casts = ['tanggal' => 'date'];
 

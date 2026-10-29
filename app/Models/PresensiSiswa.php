@@ -10,7 +10,7 @@ class PresensiSiswa extends Model
     protected $table = 'presensi_siswa';
 
     protected $fillable = [
-        'cabang_id', 'kelas_id', 'siswa_id', 'guru_id', 'tanggal', 'periode_id', 'status', 'keterangan',
+        'cabang_id', 'kelas_id', 'siswa_id', 'guru_id', 'tanggal', 'periode_id', 'status', 'keterangan', 'keterangan_pengganti',
     ];
 
     protected $casts = [
