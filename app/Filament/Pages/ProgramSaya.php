@@ -36,6 +36,7 @@ class ProgramSaya extends Page
         }
 
         return Kelas::query()
+            ->where('is_active', true)
             ->whereHas('jadwal', fn (Builder $q) => $q->where('guru_id', $guruId))
             ->with([
                 'cabang',
