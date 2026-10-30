@@ -1,8 +1,11 @@
 <x-filament-panels::page>
     <div class="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-            <h2 class="text-xl font-semibold">{{ $kelas->nama_kelas }}</h2>
-            <p class="text-sm text-gray-500">{{ $kelas->cabang->nama_cabang }}</p>
+        <div style="display: flex; align-items: center; gap: .75rem;">
+            <x-kelas-icon :kelas="$kelas" :ukuran="3" />
+            <div>
+                <h2 class="text-xl font-semibold">{{ $kelas->nama_kelas }}</h2>
+                <p class="text-sm text-gray-500">{{ $kelas->cabang->nama_cabang }}</p>
+            </div>
         </div>
 
         @if(in_array($activeTab, ['presensi', 'progress', 'nilai']))

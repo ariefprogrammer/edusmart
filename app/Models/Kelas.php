@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use App\Models\KelasSiswa;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 
 class Kelas extends Model
 {
@@ -15,7 +16,7 @@ class Kelas extends Model
 
     protected $fillable = [
         'cabang_id', 'nama_kelas', 'keterangan', 'is_active',
-        'kuota_minimal', 'kuota_maksimal',
+        'kuota_minimal', 'kuota_maksimal', 'icon',
     ];
 
     protected $casts = [
@@ -94,5 +95,10 @@ class Kelas extends Model
         }
 
         return 'ok';
+    }
+
+    protected function iconUrl(): Attribute
+    {
+        return Attribute::get(fn () => $this->icon ? asset('storage/' . $this->icon) : null);
     }
 }

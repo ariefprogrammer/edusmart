@@ -14,8 +14,13 @@
 
     <div class="flex items-start justify-between gap-4 flex-wrap">
         <div>
-            <h2 class="text-xl font-semibold">{{ $j->kelas->nama_kelas }}</h2>
-            <p class="text-sm text-gray-500">{{ $j->cabang->nama_cabang }} · Guru: {{ $j->guru?->nama ?? '-' }}</p>
+        <div style="display: flex; align-items: center; gap: .75rem;">
+            <x-kelas-icon :kelas="$j->kelas" :ukuran="3" />
+            <div>
+                <h2 class="text-xl font-semibold">{{ $j->kelas->nama_kelas }}</h2>
+                <p class="text-sm text-gray-500">{{ $j->cabang->nama_cabang }} · Guru: {{ $j->guru?->nama ?? '-' }}</p>
+            </div>
+        </div>
             <p class="text-sm text-gray-500">
                 Pengganti sesi {{ $j->tanggal_seharusnya->translatedFormat('d F Y') }},
                 dilaksanakan {{ $j->tanggal_pengganti->translatedFormat('d F Y') }}

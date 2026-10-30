@@ -17,6 +17,7 @@ use App\Models\Concerns\ScopedToCabang;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Support\Enums\Alignment;
 use App\Filament\Resources\KelasResource\RelationManagers\SiswaRelationManager;
+use Filament\Forms\Components\FileUpload;
 
 class KelasResource extends Resource
 {
@@ -54,6 +55,20 @@ class KelasResource extends Resource
                     ->required()
                     ->columnSpanFull()
                     ->maxLength(255),
+
+                FileUpload::make('icon')
+                    ->label('Icon Kelas / Program')
+                    ->image()
+                    ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+                    ->maxSize(512)
+                    ->imageEditor()
+                    ->imageEditorAspectRatios(['1:1'])
+                    ->imageCropAspectRatio('1:1')
+                    ->disk('public')
+                    ->directory('kelas-icons')
+                    ->visibility('public')
+                    ->helperText('Opsional. JPG, PNG, atau WEBP, maksimal 512 KB. Gambar dipotong menjadi persegi.')
+                    ->columnSpanFull(),
 
                 Forms\Components\TextInput::make('kuota_minimal')
                     ->label('Kuota Minimal')
@@ -108,6 +123,9 @@ class KelasResource extends Resource
                 Tables\Columns\TextColumn::make('nama_kelas')
                     ->label('Nama Kelas / Program')
                     ->searchable(),
+                Tables\Columns\ViewColumn::make('icon')
+                    ->label('Icon')
+                    ->view('filament.tables.columns.kelas-icon'),
                 Tables\Columns\TextColumn::make('kuota_minimal')
                     ->label('Kuota Min')
                     ->alignment(Alignment::Center),
