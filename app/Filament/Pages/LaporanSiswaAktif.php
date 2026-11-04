@@ -67,12 +67,12 @@ class LaporanSiswaAktif extends Page implements HasForms
 
                     Select::make('cabang_id')
                         ->label('Cabang')
-                        ->options(fn () => Cabang::orderBy('nama_cabang')->pluck('nama_cabang', 'id'))
+                        ->options(fn () => $this->opsiCabang())
                         ->placeholder('Semua cabang')
                         ->searchable()
                         ->live()
                         ->afterStateUpdated(fn (Set $set) => $set('kelas_id', null))
-                        ->visible(fn () => $this->isSuperAdmin()),
+                        ->visible(fn () => $this->isSuperAdmin() || count($this->opsiCabang()) > 1),
 
                     Select::make('kelas_id')
                         ->label('Program')
@@ -142,15 +142,30 @@ class LaporanSiswaAktif extends Page implements HasForms
         return auth()->user()?->hasRole('super_admin') ?? false;
     }
 
-    /** null = tanpa pembatasan cabang (hanya super_admin yang boleh memilih cabang). */
+    /** null = tanpa pembatasan cabang (hanya super_admin tanpa pilihan cabang). */
     protected function cabangIdsTerbatas($pilihan = null): ?array
     {
+        $pilihan = $pilihan ? (int) $pilihan : null;
+
         if ($this->isSuperAdmin()) {
-            return $pilihan ? [(int) $pilihan] : null;
+            return $pilihan ? [$pilihan] : null;
         }
 
-        // Selain super_admin, pilihan dari browser diabaikan
-        return auth()->user()->cabang->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $milikUser = auth()->user()->cabang->pluck('id')->map(fn ($id) => (int) $id)->all();
+
+        // Pilihan dari browser hanya diterima jika termasuk cabang milik pengguna
+        return $pilihan && in_array($pilihan, $milikUser, true) ? [$pilihan] : $milikUser;
+    }
+
+    protected function opsiCabang(): array
+    {
+        $ids = $this->cabangIdsTerbatas();
+
+        return Cabang::query()
+            ->when($ids !== null, fn ($q) => $q->whereIn('id', $ids))
+            ->orderBy('nama_cabang')
+            ->pluck('nama_cabang', 'id')
+            ->all();
     }
 
     protected function opsiKelas($cabangId = null): array

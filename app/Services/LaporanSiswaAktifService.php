@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Services;
+use App\Models\Cabang;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -45,6 +46,7 @@ class LaporanSiswaAktifService
                 'ks.siswa_id',
                 'k.nama_kelas',
                 's.nama as nama_siswa',
+                's.cabang_id',
             ]);
 
         // 1) Bentuk periode aktif per baris kelas_siswa, lalu kumpulkan per siswa
@@ -94,6 +96,7 @@ class LaporanSiswaAktifService
             $siswa[$id] ??= [
                 'id' => $id,
                 'nama' => $pertama->nama_siswa,
+                'cabang_id' => $pertama->cabang_id,
                 'program' => [],
                 'segmen' => [],
                 'pertama_aktif' => null,
@@ -127,6 +130,10 @@ class LaporanSiswaAktifService
 
         $daftar = [];
 
+        $namaCabang = Cabang::query()
+            ->whereIn('id', collect($siswa)->pluck('cabang_id')->filter()->unique()->all())
+            ->pluck('nama_cabang', 'id');
+
         foreach ($siswa as $s) {
             $aktifAwal = self::aktifPada($s['segmen'], $awalStr);
             $aktifAkhir = self::aktifPada($s['segmen'], $akhirStr);
@@ -156,6 +163,7 @@ class LaporanSiswaAktifService
             $daftar[] = [
                 'id' => $s['id'],
                 'nama' => $s['nama'],
+                'cabang' => $namaCabang[$s['cabang_id']] ?? '-',
                 'status' => $aktifAkhir ? 'aktif' : 'tidak_aktif',
                 'gerak' => $gerak,
                 'program' => $program,

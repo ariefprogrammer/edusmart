@@ -150,6 +150,7 @@
                 <thead>
                     <tr>
                         <th>Nama siswa</th>
+                        <th>Cabang</th>
                         <th>Status</th>
                         <th>Pergerakan</th>
                         <th>Program</th>
@@ -170,6 +171,10 @@
                                     </span>
                                     <span style="font-weight: 600;">{{ $siswa['nama'] }}</span>
                                 </div>
+                            </td>
+
+                            <td>
+                                {{ $siswa['cabang'] ?? '-' }}
                             </td>
 
                             <td>
@@ -212,7 +217,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="4" style="padding: 32px; text-align: center; opacity: .6;">
+                            <td colspan="5" style="padding: 32px; text-align: center; opacity: .6;">
                                 Tidak ada siswa yang sesuai filter.
                             </td>
                         </tr>
