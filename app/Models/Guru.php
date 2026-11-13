@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use App\Models\Concerns\FormatsIndonesianPhoneNumber;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 
 class Guru extends Model
 {
@@ -15,8 +16,13 @@ class Guru extends Model
     protected $table = 'guru';
 
     protected $fillable = [
-        'cabang_id', 'nama', 'telepon', 'email', 'pendidikan', 'is_active',
+        'cabang_id', 'nama', 'telepon', 'pendidikan', 'is_active',
     ];
+
+    protected function email(): Attribute
+    {
+        return Attribute::get(fn () => $this->user?->email);
+    }
 
     public function cabang(): BelongsTo
     {

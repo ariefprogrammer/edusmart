@@ -64,41 +64,39 @@ class GuruResource extends Resource
                 // Membungkus email dan password dalam Grid 2 kolom agar bersebelahan
                 Forms\Components\Grid::make(2)
                     ->schema([
-                        // Email diletakkan di sebelah kiri
-                        Forms\Components\TextInput::make('email')
-                            ->label('Email')
-                            ->email()
-                            ->required()
-                            ->maxLength(255)
-                            ->helperText('Email ini juga dipakai sebagai email login guru.')
-                            ->unique(
-                                table: 'users',
-                                column: 'email',
-                                modifyRuleUsing: fn (Unique $rule, ?Model $record) => $rule->ignore($record?->user?->id),
-                            ),
 
                         // Password diletakkan di sebelah kanan
-                        Forms\Components\Group::make()
-                            ->relationship('user')
+                        Forms\Components\Grid::make(2)
                             ->schema([
-                                Hidden::make('name')
-                                    ->dehydrateStateUsing(fn (Get $get): ?string => $get('../nama'))
-                                    ->dehydrated(),
+                                Forms\Components\Group::make()
+                                    ->relationship('user')
+                                    ->columnSpanFull()
+                                    ->schema([
+                                        Forms\Components\Grid::make(2)->schema([
+                                            Forms\Components\TextInput::make('email')
+                                                ->label('Email')
+                                                ->email()
+                                                ->required()
+                                                ->maxLength(255)
+                                                ->unique(table: 'users', column: 'email', ignoreRecord: true)
+                                                ->helperText('Email ini juga dipakai sebagai email login guru.'),
 
-                                Hidden::make('email')
-                                    ->dehydrateStateUsing(fn (Get $get): ?string => $get('../email'))
-                                    ->dehydrated(),
+                                            Forms\Components\TextInput::make('password')
+                                                ->password()
+                                                ->revealable()
+                                                ->dehydrateStateUsing(fn (?string $state) => Hash::make($state))
+                                                ->dehydrated(fn (?string $state) => filled($state))
+                                                ->required(fn (string $context) => $context === 'create')
+                                                ->helperText(fn (string $context) => $context === 'edit'
+                                                    ? 'Kosongkan jika tidak ingin mengubah password.'
+                                                    : 'Dipakai untuk login ke panel & presensi.')
+                                                ->maxLength(255),
+                                        ]),
 
-                                Forms\Components\TextInput::make('password')
-                                    ->password()
-                                    ->revealable()
-                                    ->dehydrateStateUsing(fn (?string $state) => Hash::make($state))
-                                    ->dehydrated(fn (?string $state) => filled($state))
-                                    ->required(fn (string $context) => $context === 'create')
-                                    ->helperText(fn (string $context) => $context === 'edit'
-                                        ? 'Kosongkan jika tidak ingin mengubah password.'
-                                        : 'Dipakai untuk login ke panel & presensi.')
-                                    ->maxLength(255),
+                                        Hidden::make('name')
+                                            ->dehydrateStateUsing(fn (Get $get): ?string => $get('../nama'))
+                                            ->dehydrated(),
+                                    ]),
                             ]),
                     ]),
 
@@ -121,7 +119,8 @@ class GuruResource extends Resource
                     ->searchable(),
                 Tables\Columns\TextColumn::make('telepon')
                     ->searchable(),
-                Tables\Columns\TextColumn::make('email')
+                Tables\Columns\TextColumn::make('user.email')
+                    ->label('Email')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('pendidikan')
                     ->searchable(),
