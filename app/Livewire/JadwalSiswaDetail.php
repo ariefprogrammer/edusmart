@@ -18,18 +18,34 @@ class JadwalSiswaDetail extends Component
     {
         $hariOrder = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
 
-        $siswa = Siswa::with([
-            'kelasList' => fn ($q) => $q->with(['jadwal' => fn ($q2) => $q2->with('guru')]),
-        ])->find($this->siswaId);
+        $siswa = Siswa::find($this->siswaId);
 
-        return $siswa?->kelasList->map(function ($kelas) use ($hariOrder) {
-            $kelas->setRelation(
-                'jadwal',
-                $kelas->jadwal->sortBy(fn ($item) => array_search($item->hari, $hariOrder))->values()
-            );
+        if (! $siswa) {
+            return collect();
+        }
 
-            return $kelas;
-        }) ?? collect();
+        // Hanya program yang masih aktif untuk siswa ini, dan hanya jam yang dipilihkan untuknya
+        return $siswa->kelasAktif()
+            ->with(['jadwal' => fn ($q) => $q
+                ->where('is_active', true)
+                ->whereIn('id', fn ($sub) => $sub
+                    ->select('jadwal_id')
+                    ->from('jadwal_siswa')
+                    ->where('siswa_id', $this->siswaId))
+                ->with('guru'),
+            ])
+            ->orderBy('kelas.nama_kelas')
+            ->get()
+            ->map(function ($kelas) use ($hariOrder) {
+                $kelas->setRelation(
+                    'jadwal',
+                    $kelas->jadwal
+                        ->sortBy(fn ($item) => [array_search($item->hari, $hariOrder), $item->jam_mulai])
+                        ->values()
+                );
+
+                return $kelas;
+            });
     }
 
     public function render()

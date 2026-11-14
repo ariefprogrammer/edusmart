@@ -54,7 +54,7 @@
                         @empty
                             <tr>
                                 <td colspan="6" class="py-4 text-center text-gray-400">
-                                    Belum ada jadwal untuk program ini.
+                                    Belum ada jam yang dipilih untuk program ini.
                                 </td>
                             </tr>
                         @endforelse
