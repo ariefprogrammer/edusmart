@@ -14,6 +14,7 @@ use Illuminate\Support\HtmlString;
 use App\Models\KelasSiswaFollowUp;
 use Filament\Forms\Get;
 use App\Models\Siswa;
+use App\Services\PenjadwalanSiswa;
 
 class SiswaRelationManager extends RelationManager
 {
@@ -62,6 +63,14 @@ class SiswaRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('pivot.tanggal_gabung')
                     ->label('Tanggal Gabung')
                     ->date('d M Y'),
+                Tables\Columns\TextColumn::make('jam_dipilih')
+                    ->label('Jam')
+                    ->getStateUsing(fn ($record) => PenjadwalanSiswa::labelTersimpan(
+                        $record->getKey(),
+                        $this->getOwnerRecord()->getKey(),
+                    ))
+                    ->badge()
+                    ->placeholder('Belum memilih jam'),
             ])
             ->headerActions([
                 Tables\Actions\AttachAction::make()
@@ -88,6 +97,17 @@ class SiswaRelationManager extends RelationManager
                             $action->halt();
                         }
                     })
+                    ->after(function (array $data) {
+                        if (blank($data['recordId'] ?? null)) {
+                            return;
+                        }
+
+                        PenjadwalanSiswa::simpanUntukKelas(
+                            (int) $data['recordId'],
+                            (int) $this->getOwnerRecord()->getKey(),
+                            array_map('intval', $data['jadwal_ids'] ?? []),
+                        );
+                    })
                     ->preloadRecordSelect()
                     ->recordSelectSearchColumns(['nama'])
                     ->recordSelectOptionsQuery(
@@ -101,6 +121,28 @@ class SiswaRelationManager extends RelationManager
                         Forms\Components\Toggle::make('is_active')
                             ->label('Aktif di Program Ini')
                             ->default(true),
+                        Forms\Components\Select::make('jadwal_ids')
+                            ->label('Pilih jam')
+                            ->multiple()
+                            ->options(fn () => PenjadwalanSiswa::opsi([$this->getOwnerRecord()->getKey()], kelompok: false))
+                            ->visible(fn () => $this->getOwnerRecord()->jadwal()->where('is_active', true)->exists())
+                            ->required()
+                            ->helperText('Pilih satu atau lebih jam yang diikuti siswa di program ini.')
+                            ->rule(fn (Get $get): \Closure => function (string $attribute, $value, \Closure $fail) use ($get) {
+                                // Program yang dimasukkan nonaktif tidak dihitung bentrok (dicek saat diaktifkan)
+                                if (! $get('is_active') || blank($get('recordId'))) {
+                                    return;
+                                }
+
+                                $pesan = PenjadwalanSiswa::pesanBentrok(
+                                    array_map('intval', (array) $value),
+                                    (int) $get('recordId'),
+                                );
+
+                                if ($pesan) {
+                                    $fail($pesan);
+                                }
+                            }),
                     ]),
             ])
             ->actions([

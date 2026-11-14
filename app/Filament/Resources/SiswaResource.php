@@ -22,6 +22,8 @@ use Illuminate\Database\Eloquent\Builder;
 use App\Models\Kelas;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
+use Filament\Forms\Set;
+use App\Services\PenjadwalanSiswa;
 
 class SiswaResource extends Resource
 {
@@ -44,6 +46,11 @@ class SiswaResource extends Resource
             ->pluck('kelas.id')
             ->map(fn ($id) => (int) $id)
             ->all();
+    }
+
+    protected static function idInt(mixed $nilai): array
+    {
+        return collect($nilai ?? [])->map(fn ($id) => (int) $id)->values()->all();
     }
 
     protected static function siswaTidakAktifDiForm(Get $get): bool
@@ -86,6 +93,20 @@ class SiswaResource extends Resource
                 ->multiple()
                 ->searchable()
                 ->preload()
+                ->live()
+                ->afterStateUpdated(function (Get $get, Set $set, ?Model $record) {
+                    $kelasIds = self::idInt($get('kelasList'));
+
+                    $dipilih = collect(self::idInt($get('jadwal_ids')))
+                        ->intersect(PenjadwalanSiswa::idJadwalDi($kelasIds));
+
+                    if ($record?->exists) {
+                        $baru = array_diff($kelasIds, self::programAktifSiswa($record));
+                        $dipilih = $dipilih->merge(PenjadwalanSiswa::idTersimpan($record->getKey(), $baru));
+                    }
+
+                    $set('jadwal_ids', $dipilih->unique()->values()->all());
+                })
                 // Wajib saat membuat siswa; saat edit hanya wajib jika siswa aktif
                 ->required(fn (Get $get, ?Model $record): bool => ! $record?->exists || ! self::siswaTidakAktifDiForm($get))
                 ->helperText(fn (Get $get, ?Model $record) => $record?->exists && self::siswaTidakAktifDiForm($get)
@@ -157,6 +178,54 @@ class SiswaResource extends Resource
 
                     if ($namaPenuh->isNotEmpty()) {
                         $fail('Kuota penuh untuk program: ' . $namaPenuh->join(', ') . '. Hapus dari pilihan atau naikkan kuota maksimalnya.');
+                    }
+                }),
+            
+            Select::make('jadwal_ids')
+                ->label('Pilih jam')
+                ->multiple()
+                ->options(fn (Get $get) => PenjadwalanSiswa::opsi(self::idInt($get('kelasList'))))
+                ->visible(fn (Get $get) => filled($get('kelasList')))
+                ->dehydrated(false)
+                ->helperText('Pilih satu atau lebih jam yang diikuti siswa. Jam yang bentrok tidak diizinkan.')
+                ->required(function (Get $get, ?Model $record): bool {
+                    $wajib = PenjadwalanSiswa::kelasWajibPilih(
+                        $record?->getKey(),
+                        self::idInt($get('kelasList')),
+                        self::programAktifSiswa($record),
+                    );
+
+                    return PenjadwalanSiswa::namaKelasTanpaPilihan($wajib, [])->isNotEmpty();
+                })
+                // Nilai awal di form edit: jam dari program yang masih aktif
+                ->loadStateFromRelationshipsUsing(function (Select $component, ?Model $record) {
+                    $component->state($record?->exists
+                        ? PenjadwalanSiswa::idTersimpan($record->getKey(), self::programAktifSiswa($record))
+                        : []);
+                })
+                ->saveRelationshipsUsing(function (Model $record, $state) {
+                    PenjadwalanSiswa::sinkron($record, self::idInt($state));
+                })
+                ->rule(fn (Get $get, ?Model $record): Closure => function (string $attribute, $value, Closure $fail) use ($get, $record) {
+                    $kelasIds = self::idInt($get('kelasList'));
+                    $jadwalIds = self::idInt($value);
+
+                    $wajib = PenjadwalanSiswa::kelasWajibPilih(
+                        $record?->getKey(),
+                        $kelasIds,
+                        self::programAktifSiswa($record),
+                    );
+
+                    $tanpa = PenjadwalanSiswa::namaKelasTanpaPilihan($wajib, $jadwalIds);
+
+                    if ($tanpa->isNotEmpty()) {
+                        $fail('Pilih minimal satu jam untuk program: ' . $tanpa->join(', ') . '.');
+
+                        return;
+                    }
+
+                    if ($pesan = PenjadwalanSiswa::pesanBentrok($jadwalIds)) {
+                        $fail($pesan);
                     }
                 }),
 
