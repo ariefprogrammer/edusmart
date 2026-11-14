@@ -13,6 +13,8 @@ use App\Models\RppUlasan;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Livewire\WithFileUploads;
+use Illuminate\Support\Collection;
+use Livewire\Attributes\Locked;
 
 class ManajemenProgram extends Page
 {
@@ -25,8 +27,12 @@ class ManajemenProgram extends Page
     public Kelas $kelas;
     public string $activeTab = 'presensi';
     public string $tanggal;
+
+    #[Locked]
     public bool $isGuruPengampu = false;
+
     public bool $tampilkanSemuaSiswa = false;
+    protected ?Collection $siswaCache = null;
 
     // Periode tipe "bulan" — dipakai di tab Presensi & Progress, mengikuti tanggal yang dipilih
     public ?int $periodeId = null;
@@ -63,7 +69,7 @@ class ManajemenProgram extends Page
         abort_unless($isGuruPengampu || $isCabangUser || $isSuperAdmin, 403);
 
         $this->isGuruPengampu = $isGuruPengampu;
-        $this->kelas = $kelas->load(['cabang', 'siswa' => fn ($q) => $q->orderBy('nama')]);
+        $this->kelas = $kelas->load('cabang');
         $this->tanggal = today()->toDateString();
         $this->activeTab = 'presensi';
 
@@ -115,12 +121,37 @@ class ManajemenProgram extends Page
     }
 
     /**
+     * Semua siswa program yang boleh dilihat user ini.
+     * Guru pengampu hanya melihat siswa yang di-assign ke jadwal aktif miliknya
+     * di program ini. Admin, koordinator, dan super_admin melihat semua siswa.
+     */
+    protected function semuaSiswa(): Collection
+    {
+        if ($this->siswaCache !== null) {
+            return $this->siswaCache;
+        }
+
+        $guruId = $this->isGuruPengampu ? auth()->user()->guru?->id : null;
+
+        return $this->siswaCache = $this->kelas->siswa()
+            ->orderBy('siswa.nama')
+            ->when($this->isGuruPengampu, fn ($q) => $q->whereIn('siswa.id', fn ($sub) => $sub
+                ->select('jadwal_siswa.siswa_id')
+                ->from('jadwal_siswa')
+                ->join('jadwal', 'jadwal.id', '=', 'jadwal_siswa.jadwal_id')
+                ->where('jadwal.kelas_id', $this->kelas->id)
+                ->where('jadwal.guru_id', $guruId)
+                ->where('jadwal.is_active', true)))
+            ->get();
+    }
+
+    /**
      * Daftar siswa yang ditampilkan di tabel — default hanya yang is_active,
      * kecuali toggle "tampilkan semua" dinyalakan.
      */
     public function getSiswaList()
     {
-        $siswa = $this->kelas->siswa->unique('id');
+        $siswa = $this->semuaSiswa()->unique('id');
 
         return $this->tampilkanSemuaSiswa
             ? $siswa->values()
@@ -133,7 +164,7 @@ class ManajemenProgram extends Page
      */
     protected function siswaAktifIds(): array
     {
-        return $this->kelas->siswa
+        return $this->semuaSiswa()
             ->filter(fn ($s) => $s->is_active && $s->pivot->is_active)
             ->pluck('id')
             ->all();
@@ -155,7 +186,7 @@ class ManajemenProgram extends Page
             ->get()
             ->keyBy('siswa_id');
 
-        $this->presensiData = $this->kelas->siswa->mapWithKeys(function ($siswa) use ($existing) {
+        $this->presensiData = $this->semuaSiswa()->mapWithKeys(function ($siswa) use ($existing) {
             $row = $existing->get($siswa->id);
 
             return [
@@ -230,7 +261,7 @@ class ManajemenProgram extends Page
             ->get()
             ->keyBy('siswa_id');
 
-        $this->progressData = $this->kelas->siswa->mapWithKeys(function ($siswa) use ($existing) {
+        $this->progressData = $this->semuaSiswa()->mapWithKeys(function ($siswa) use ($existing) {
             return [$siswa->id => $existing->get($siswa->id)?->catatan ?? ''];
         })->toArray();
     }
@@ -339,7 +370,7 @@ class ManajemenProgram extends Page
             ->get()
             ->groupBy('siswa_id');
 
-        $this->nilaiData = $this->kelas->siswa->mapWithKeys(function ($siswa) use ($existing, $kategoriList) {
+        $this->nilaiData = $this->semuaSiswa()->mapWithKeys(function ($siswa) use ($existing, $kategoriList) {
             $nilaiPerKategori = $existing->get($siswa->id, collect())->keyBy('kategori_nilai_id');
 
             $row = $kategoriList->mapWithKeys(fn ($kategori) => [
