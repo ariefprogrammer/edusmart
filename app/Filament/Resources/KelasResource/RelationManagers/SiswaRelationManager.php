@@ -15,6 +15,11 @@ use App\Models\KelasSiswaFollowUp;
 use Filament\Forms\Get;
 use App\Models\Siswa;
 use App\Services\PenjadwalanSiswa;
+use App\Models\Guru;
+use App\Models\Jadwal;
+use App\Models\KelasSiswa;
+use Filament\Resources\Components\Tab;
+use Illuminate\Database\Eloquent\Builder;
 
 class SiswaRelationManager extends RelationManager
 {
@@ -22,6 +27,144 @@ class SiswaRelationManager extends RelationManager
     protected static ?string $inverseRelationship = 'kelasList';
     protected static ?string $recordTitleAttribute = 'nama';
     protected static ?string $title = 'Siswa Terdaftar';
+
+    protected ?array $tabsCache = null;
+
+    public function getTabs(): array
+    {
+        if ($this->tabsCache !== null) {
+            return $this->tabsCache;
+        }
+
+        $kelas = $this->getOwnerRecord();
+        $sesi = $kelas->sesiGuru();
+
+        // Program tanpa jadwal aktif: perilaku lama (satu daftar, kuota per program)
+        if ($sesi->isEmpty()) {
+            return $this->tabsCache = ['semua' => Tab::make('Semua Siswa')];
+        }
+
+        $jumlah = $kelas->jumlahSiswaAktifPerSesi();
+        $maks = $kelas->kuota_maksimal;
+        $tabs = [];
+
+        foreach ($sesi as $guru) {
+            $terisi = (int) $jumlah->get($guru->id, 0);
+
+            $tabs['sesi-' . $guru->id] = Tab::make($guru->nama)
+                ->badge($maks !== null ? "{$terisi}/{$maks}" : (string) $terisi)
+                ->badgeColor(match (true) {
+                    $maks !== null && $terisi >= $maks => 'danger',
+                    $kelas->statusKuota($terisi) === 'kurang' => 'warning',
+                    default => 'success',
+                });
+        }
+
+        // Siswa program yang belum punya jam di sesi mana pun (mis. siswa lama)
+        $tanpaSesi = $kelas->siswa()->whereNotIn('siswa.id', $kelas->subIdSiswaSesi())->count();
+
+        if ($tanpaSesi > 0) {
+            $tabs['tanpa-sesi'] = Tab::make('Belum Memilih Sesi')
+                ->badge($tanpaSesi)
+                ->badgeColor('gray');
+        }
+
+        return $this->tabsCache = $tabs;
+    }
+
+    protected function tabAktif(): ?string
+    {
+        $kunci = array_keys($this->getTabs());
+
+        return in_array($this->activeTab, $kunci, true) ? $this->activeTab : ($kunci[0] ?? null);
+    }
+
+    /** Id guru dari tab sesi yang sedang dibuka; null di tab lain. */
+    protected function sesiAktif(): ?int
+    {
+        $tab = (string) $this->tabAktif();
+
+        return str_starts_with($tab, 'sesi-') ? (int) substr($tab, 5) : null;
+    }
+
+    protected function namaSesiAktif(): string
+    {
+        $guruId = $this->sesiAktif();
+
+        return $guruId ? (Guru::find($guruId)?->nama ?? '-') : '-';
+    }
+
+    protected function bolehTambahSiswa(): bool
+    {
+        $kelas = $this->getOwnerRecord();
+        $guruId = $this->sesiAktif();
+
+        if ($guruId) {
+            return ! $kelas->isKuotaSesiPenuh($guruId);
+        }
+
+        // Program tanpa sesi: kuota per program. Tab "Belum Memilih Sesi": tidak ada tombol.
+        return $this->tabAktif() === 'semua' && ! $kelas->isKuotaPenuh();
+    }
+
+    protected function sudahDiProgram(mixed $siswaId): bool
+    {
+        return filled($siswaId) && KelasSiswa::query()
+            ->where('kelas_id', $this->getOwnerRecord()->getKey())
+            ->where('siswa_id', $siswaId)
+            ->exists();
+    }
+
+    /** Siswa yang boleh ditambahkan di tab yang sedang dibuka. */
+    protected function kandidatSiswa(): array
+    {
+        $kelas = $this->getOwnerRecord();
+        $guruId = $this->sesiAktif();
+
+        return Siswa::query()
+            ->where('cabang_id', $kelas->cabang_id)
+            ->where('is_active', true)
+            // Siswa yang nonaktif di program ini diaktifkan lewat Update / CRM
+            ->whereNotIn('id', fn ($q) => $q->select('siswa_id')
+                ->from('kelas_siswa')
+                ->where('kelas_id', $kelas->getKey())
+                ->where('is_active', false))
+            ->when(
+                $guruId,
+                // Sesi: siswa yang sudah di program tetap boleh, asal belum di sesi ini
+                fn ($q) => $q->whereNotIn('id', $kelas->subIdSiswaSesi($guruId)),
+                // Tanpa sesi: yang sudah di program tidak ditampilkan
+                fn ($q) => $q->whereNotIn('id', fn ($sub) => $sub->select('siswa_id')
+                    ->from('kelas_siswa')
+                    ->where('kelas_id', $kelas->getKey())),
+            )
+            ->orderBy('nama')
+            ->pluck('nama', 'id')
+            ->all();
+    }
+
+    /** Nama sesi (guru) yang sudah penuh dan akan diikuti siswa ini bila diaktifkan kembali. */
+    protected function sesiPenuhUntukSiswa(Siswa $siswa): Collection
+    {
+        $kelas = $this->getOwnerRecord();
+
+        // Program tanpa sesi: kuota per program seperti sebelumnya
+        if ($kelas->sesiGuru()->isEmpty()) {
+            return $kelas->isKuotaPenuh() ? collect(['program ini']) : collect();
+        }
+
+        return Guru::query()
+            ->whereIn('id', Jadwal::query()
+                ->where('kelas_id', $kelas->getKey())
+                ->where('is_active', true)
+                ->whereIn('id', fn ($q) => $q->select('jadwal_id')
+                    ->from('jadwal_siswa')
+                    ->where('siswa_id', $siswa->getKey()))
+                ->select('guru_id'))
+            ->get()
+            ->filter(fn (Guru $guru) => $kelas->isKuotaSesiPenuh($guru->id))
+            ->pluck('nama');
+    }
 
     public function form(Form $form): Form
     {
@@ -39,10 +182,39 @@ class SiswaRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(function (Builder $query) {
+                $kelas = $this->getOwnerRecord();
+                $guruId = $this->sesiAktif();
+
+                if ($guruId) {
+                    return $query->whereIn('siswa.id', $kelas->subIdSiswaSesi($guruId));
+                }
+
+                if ($this->tabAktif() === 'tanpa-sesi') {
+                    return $query->whereNotIn('siswa.id', $kelas->subIdSiswaSesi());
+                }
+
+                return $query;
+            })
             ->description(function () {
                 $kelas = $this->getOwnerRecord();
-                $terisi = $kelas->jumlahSiswaAktif();
+                $guruId = $this->sesiAktif();
 
+                if ($guruId) {
+                    $terisi = $kelas->jumlahSiswaAktifSesi($guruId);
+                    $kuota = $kelas->kuota_maksimal !== null
+                        ? "{$terisi} / {$kelas->kuota_maksimal}"
+                        : "{$terisi} (tanpa batas)";
+
+                    return "Sesi {$this->namaSesiAktif()} · Siswa aktif: {$kuota} · Kuota minimal: {$kelas->kuota_minimal}";
+                }
+
+                if ($this->tabAktif() === 'tanpa-sesi') {
+                    return 'Siswa program ini yang belum memilih jam di sesi (guru) mana pun. '
+                        . 'Tambahkan lewat tab sesi, atau atur jamnya di halaman Siswa.';
+                }
+
+                $terisi = $kelas->jumlahSiswaAktif();
                 $kuota = $kelas->kuota_maksimal !== null
                     ? "{$terisi} / {$kelas->kuota_maksimal}"
                     : "{$terisi} (tanpa batas)";
@@ -68,113 +240,118 @@ class SiswaRelationManager extends RelationManager
                     ->getStateUsing(fn ($record) => PenjadwalanSiswa::labelTersimpan(
                         $record->getKey(),
                         $this->getOwnerRecord()->getKey(),
+                        $this->sesiAktif(),
                     ))
                     ->badge()
                     ->placeholder('Belum memilih jam'),
             ])
             ->headerActions([
-                Tables\Actions\AttachAction::make()
-                    ->label(fn () => $this->getOwnerRecord()->isKuotaPenuh()
-                        ? 'Kuota Penuh'
-                        : __('filament-actions::attach.single.label'))
-                    ->icon(fn () => $this->getOwnerRecord()->isKuotaPenuh()
-                        ? 'heroicon-o-lock-closed'
-                        : 'heroicon-o-plus')
-                    ->color(fn () => $this->getOwnerRecord()->isKuotaPenuh() ? 'danger' : 'primary')
-                    ->disabled(fn () => $this->getOwnerRecord()->isKuotaPenuh())
-                    ->tooltip(fn () => $this->getOwnerRecord()->isKuotaPenuh()
-                        ? 'Kuota maksimal sudah tercapai'
-                        : null)
-                    ->before(function (array $data, Tables\Actions\AttachAction $action) {
-                        // Pengaman di sisi server: tombol nonaktif saja tidak cukup
-                        if ($this->getOwnerRecord()->isKuotaPenuh()) {
-                            Notification::make()
-                                ->title('Kuota penuh')
-                                ->body('Siswa tidak dapat ditambahkan karena kuota maksimal sudah tercapai.')
-                                ->danger()
-                                ->send();
+                Tables\Actions\Action::make('tambahSiswa')
+                    ->label('Tambah Siswa')
+                    ->icon('heroicon-o-plus')
+                    ->visible(fn () => $this->bolehTambahSiswa())
+                    ->modalHeading(fn () => $this->sesiAktif()
+                        ? 'Tambah Siswa — Sesi ' . $this->namaSesiAktif()
+                        : 'Tambah Siswa')
+                    ->modalSubmitActionLabel('Tambahkan')
+                    ->form([
+                        Forms\Components\Select::make('siswa_id')
+                            ->label('Siswa')
+                            ->options(fn () => $this->kandidatSiswa())
+                            ->searchable()
+                            ->required()
+                            ->live(),
 
-                            $action->halt();
-                        }
-
-                        // Siswa nonaktif tidak boleh di-attach, meski dropdown sudah menyembunyikannya
-                        $siswaIds = collect((array) ($data['recordId'] ?? []))->filter()->all();
-
-                        $nonaktif = Siswa::query()
-                            ->whereIn('id', $siswaIds)
-                            ->where('is_active', false)
-                            ->pluck('nama');
-
-                        if ($nonaktif->isNotEmpty()) {
-                            Notification::make()
-                                ->title('Siswa nonaktif tidak dapat ditambahkan')
-                                ->body('Aktifkan siswa terlebih dahulu: ' . $nonaktif->join(', ') . '.')
-                                ->danger()
-                                ->send();
-
-                            $action->halt();
-                        }
-                    })
-                    // Pilihan jam disimpan setelah siswa berhasil di-attach
-                    ->after(function (array $data) {
-                        $kelasId = (int) $this->getOwnerRecord()->getKey();
-                        $jadwalIds = array_map('intval', $data['jadwal_ids'] ?? []);
-
-                        foreach ((array) ($data['recordId'] ?? []) as $siswaId) {
-                            if (filled($siswaId)) {
-                                PenjadwalanSiswa::simpanUntukKelas((int) $siswaId, $kelasId, $jadwalIds);
-                            }
-                        }
-                    })
-                    ->preloadRecordSelect()
-                    ->recordSelectSearchColumns(['nama'])
-                    ->recordSelectOptionsQuery(
-                        fn ($query) => $query
-                            ->where('cabang_id', $this->getOwnerRecord()->cabang_id)
-                            ->where('siswa.is_active', true)
-                    )
-                    ->form(fn (Tables\Actions\AttachAction $action) => [
-                        $action->getRecordSelect(),
-
+                        // Hanya untuk siswa yang belum terdaftar di program ini
                         Forms\Components\DatePicker::make('tanggal_gabung')
                             ->native(false)
-                            ->default(now()),
+                            ->default(now())
+                            ->visible(fn (Get $get) => ! $this->sudahDiProgram($get('siswa_id'))),
 
                         Forms\Components\Toggle::make('is_active')
                             ->label('Aktif di Program Ini')
-                            ->default(true),
+                            ->default(true)
+                            ->visible(fn (Get $get) => ! $this->sudahDiProgram($get('siswa_id'))),
 
                         Forms\Components\Select::make('jadwal_ids')
                             ->label('Pilih jam')
                             ->multiple()
-                            ->options(fn () => PenjadwalanSiswa::opsi([$this->getOwnerRecord()->getKey()], kelompok: false))
-                            ->visible(fn () => $this->getOwnerRecord()->jadwal()->where('is_active', true)->exists())
+                            ->options(fn () => PenjadwalanSiswa::opsiSesi(
+                                $this->getOwnerRecord()->getKey(),
+                                (int) $this->sesiAktif(),
+                            ))
+                            ->visible(fn () => $this->sesiAktif() !== null)
                             ->required()
-                            ->helperText('Pilih satu atau lebih jam yang diikuti siswa di program ini.')
+                            ->helperText(fn () => 'Jam milik sesi ' . $this->namaSesiAktif() . '. Pilih satu atau lebih.')
                             ->rule(fn (Get $get): \Closure => function (string $attribute, $value, \Closure $fail) use ($get) {
-                                // Program yang dimasukkan dalam keadaan nonaktif tidak dihitung bentrok
-                                if (! $get('is_active')) {
+                                if (blank($get('siswa_id'))) {
                                     return;
                                 }
 
-                                foreach ((array) $get('recordId') as $siswaId) {
-                                    if (blank($siswaId)) {
-                                        continue;
-                                    }
+                                // Siswa baru yang dimasukkan dalam keadaan nonaktif tidak dihitung bentrok
+                                if (! $this->sudahDiProgram($get('siswa_id')) && ! $get('is_active')) {
+                                    return;
+                                }
 
-                                    $pesan = PenjadwalanSiswa::pesanBentrok(
-                                        array_map('intval', (array) $value),
-                                        (int) $siswaId,
-                                    );
+                                $pesan = PenjadwalanSiswa::pesanBentrok(
+                                    array_map('intval', (array) $value),
+                                    (int) $get('siswa_id'),
+                                );
 
-                                    if ($pesan) {
-                                        $fail($pesan);
-
-                                        return;
-                                    }
+                                if ($pesan) {
+                                    $fail($pesan);
                                 }
                             }),
-                    ]),
+                    ])
+                    ->action(function (array $data, Tables\Actions\Action $action) {
+                        $kelas = $this->getOwnerRecord();
+                        $guruId = $this->sesiAktif();
+                        $siswaId = (int) ($data['siswa_id'] ?? 0);
+                        $jadwalIds = array_map('intval', $data['jadwal_ids'] ?? []);
+
+                        // Pengaman di sisi server: tombol yang disembunyikan saja tidak cukup
+                        $penuh = $guruId ? $kelas->isKuotaSesiPenuh($guruId) : $kelas->isKuotaPenuh();
+
+                        if ($penuh) {
+                            Notification::make()
+                                ->title('Kuota penuh')
+                                ->body($guruId
+                                    ? 'Kuota maksimal sesi ' . $this->namaSesiAktif() . ' sudah tercapai.'
+                                    : 'Siswa tidak dapat ditambahkan karena kuota maksimal sudah tercapai.')
+                                ->danger()
+                                ->send();
+
+                            $action->halt();
+                        }
+
+                        if (! array_key_exists($siswaId, $this->kandidatSiswa()) || ($guruId && $jadwalIds === [])) {
+                            Notification::make()
+                                ->title('Siswa tidak dapat ditambahkan')
+                                ->body('Siswa tidak aktif, sudah terdaftar di sesi ini, atau jam belum dipilih.')
+                                ->danger()
+                                ->send();
+
+                            $action->halt();
+                        }
+
+                        DB::transaction(function () use ($kelas, $guruId, $siswaId, $jadwalIds, $data) {
+                            // Siswa baru di program: buat baris kelas_siswa (riwayat dicatat oleh model pivot)
+                            if (! $this->sudahDiProgram($siswaId)) {
+                                $kelas->siswa()->attach($siswaId, [
+                                    'tanggal_gabung' => $data['tanggal_gabung'] ?? now()->toDateString(),
+                                    'is_active' => (bool) ($data['is_active'] ?? true),
+                                ]);
+                            }
+
+                            if ($guruId) {
+                                PenjadwalanSiswa::tambahKeJadwal($siswaId, $kelas->getKey(), $jadwalIds);
+                            }
+                        });
+
+                        $this->tabsCache = null;
+
+                        Notification::make()->title('Siswa berhasil ditambahkan')->success()->send();
+                    }),
             ])
             ->actions([
                 Tables\Actions\EditAction::make()
@@ -245,14 +422,18 @@ class SiswaRelationManager extends RelationManager
                             $action->halt();
                         }
 
-                        if ($statusBaru && ! $statusLama && $this->getOwnerRecord()->isKuotaPenuh()) {
-                            Notification::make()
-                                ->title('Kuota penuh')
-                                ->body('Siswa tidak dapat diaktifkan kembali karena kuota maksimal sudah tercapai.')
-                                ->danger()
-                                ->send();
+                        if ($statusBaru && ! $statusLama) {
+                            $penuh = $this->sesiPenuhUntukSiswa($record);
 
-                            $action->halt();
+                            if ($penuh->isNotEmpty()) {
+                                Notification::make()
+                                    ->title('Kuota penuh')
+                                    ->body('Siswa tidak dapat diaktifkan kembali karena kuota sesi sudah tercapai: ' . $penuh->join(', ') . '.')
+                                    ->danger()
+                                    ->send();
+
+                                $action->halt();
+                            }
                         }
                     })
                     ->using(function ($record, array $data) {
@@ -415,6 +596,7 @@ class SiswaRelationManager extends RelationManager
             . 'Jika siswa berhenti atau keluar, gunakan tombol <em>Update / CRM</em> agar riwayatnya tetap tersimpan.</p>'
             . '<p style="margin-top: 0.5rem;">Jika dilanjutkan:</p>'
             . '<ul style="list-style: disc; margin: 0.25rem 0 0 1.25rem;">'
+            . '<li>Siswa dikeluarkan dari <strong>program beserta semua sesi (guru)</strong> yang diikutinya.</li>'
             . "<li>{$jumlahRiwayat} catatan riwayat status dan {$jumlahFollowUp} catatan follow-up di program ini akan <strong>dihapus permanen</strong>.</li>"
             . '<li>Tanggal gabung hilang dan tindakan ini <strong>tidak bisa dibatalkan</strong>.</li>'
             . '<li>Siswa yang dikeluarkan tidak akan lagi terhitung di laporan periode lalu untuk program ini.</li>'

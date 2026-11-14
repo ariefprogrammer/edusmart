@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use App\Models\KelasSiswa;
 use Illuminate\Database\Eloquent\Casts\Attribute;
+use Closure;
+use Illuminate\Support\Facades\DB;
 
 class Kelas extends Model
 {
@@ -100,5 +102,54 @@ class Kelas extends Model
     protected function iconUrl(): Attribute
     {
         return Attribute::get(fn () => $this->icon ? asset('storage/' . $this->icon) : null);
+    }
+
+    /** Sesi = satu guru yang punya jadwal aktif di program ini. */
+    public function sesiGuru(): \Illuminate\Support\Collection
+    {
+        return Guru::query()
+            ->whereIn('id', $this->jadwal()->where('is_active', true)->select('guru_id'))
+            ->orderBy('nama')
+            ->get();
+    }
+
+    /** Subquery: id siswa yang ikut jadwal aktif program ini (opsional: milik satu guru). */
+    public function subIdSiswaSesi(?int $guruId = null): Closure
+    {
+        return function ($query) use ($guruId) {
+            $query->select('jadwal_siswa.siswa_id')
+                ->from('jadwal_siswa')
+                ->join('jadwal', 'jadwal.id', '=', 'jadwal_siswa.jadwal_id')
+                ->where('jadwal.kelas_id', $this->getKey())
+                ->where('jadwal.is_active', true)
+                ->when($guruId, fn ($q) => $q->where('jadwal.guru_id', $guruId));
+        };
+    }
+
+    /** Jumlah siswa aktif per sesi, dengan kunci id guru. Satu query untuk semua sesi. */
+    public function jumlahSiswaAktifPerSesi(): \Illuminate\Support\Collection
+    {
+        return DB::table('jadwal_siswa')
+            ->join('jadwal', 'jadwal.id', '=', 'jadwal_siswa.jadwal_id')
+            ->join('kelas_siswa', 'kelas_siswa.id', '=', 'jadwal_siswa.kelas_siswa_id')
+            ->join('siswa', 'siswa.id', '=', 'jadwal_siswa.siswa_id')
+            ->where('jadwal.kelas_id', $this->getKey())
+            ->where('jadwal.is_active', true)
+            ->where('kelas_siswa.is_active', true)
+            ->whereNull('siswa.deleted_at')
+            ->groupBy('jadwal.guru_id')
+            ->selectRaw('jadwal.guru_id, COUNT(DISTINCT jadwal_siswa.siswa_id) as total')
+            ->pluck('total', 'guru_id');
+    }
+
+    public function jumlahSiswaAktifSesi(int $guruId): int
+    {
+        return (int) $this->jumlahSiswaAktifPerSesi()->get($guruId, 0);
+    }
+
+    public function isKuotaSesiPenuh(int $guruId): bool
+    {
+        return $this->kuota_maksimal !== null
+            && $this->jumlahSiswaAktifSesi($guruId) >= $this->kuota_maksimal;
     }
 }

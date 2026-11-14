@@ -76,13 +76,14 @@ class PenjadwalanSiswa
             ->all();
     }
 
-    /** Label jam yang dipilih siswa di satu program (untuk kolom tabel). */
-    public static function labelTersimpan(int $siswaId, int $kelasId): array
+    /** Label jam yang dipilih siswa di satu program (opsional: hanya sesi satu guru). */
+    public static function labelTersimpan(int $siswaId, int $kelasId, ?int $guruId = null): array
     {
         return Jadwal::query()
             ->with('guru')
             ->where('kelas_id', $kelasId)
             ->where('is_active', true)
+            ->when($guruId, fn ($q) => $q->where('guru_id', $guruId))
             ->whereIn('id', fn ($q) => $q->select('jadwal_id')->from('jadwal_siswa')->where('siswa_id', $siswaId))
             ->get()
             ->map(fn (Jadwal $j) => self::label($j))
@@ -244,6 +245,66 @@ class PenjadwalanSiswa
 
         foreach ($kelasAktif as $kelasId) {
             self::simpanUntukKelas($siswa->getKey(), (int) $kelasId, $jadwalIds);
+        }
+    }
+
+    /** Opsi "Pilih jam" untuk satu sesi (satu guru di satu program). */
+    public static function opsiSesi(int $kelasId, int $guruId): array
+    {
+        return Jadwal::query()
+            ->where('kelas_id', $kelasId)
+            ->where('guru_id', $guruId)
+            ->where('is_active', true)
+            ->get()
+            ->sortBy(fn (Jadwal $j) => [array_search($j->hari, self::HARI), $j->jam_mulai])
+            ->mapWithKeys(fn (Jadwal $j) => [
+                $j->id => $j->hari . ' ' . substr($j->jam_mulai, 0, 5) . '–' . substr($j->jam_selesai, 0, 5),
+            ])
+            ->all();
+    }
+
+    /**
+     * Tambahkan siswa ke jadwal-jadwal ini TANPA menghapus jam di sesi lain.
+     * (simpanUntukKelas() menyamakan seluruh jam program, jadi tidak cocok di sini.)
+     */
+    public static function tambahKeJadwal(int $siswaId, int $kelasId, array $jadwalIds): void
+    {
+        $pivotId = DB::table('kelas_siswa')
+            ->where('siswa_id', $siswaId)
+            ->where('kelas_id', $kelasId)
+            ->value('id');
+
+        $valid = Jadwal::query()
+            ->where('kelas_id', $kelasId)
+            ->where('is_active', true)
+            ->whereIn('id', $jadwalIds)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if (! $pivotId || $valid === []) {
+            return;
+        }
+
+        $sudah = DB::table('jadwal_siswa')
+            ->where('siswa_id', $siswaId)
+            ->whereIn('jadwal_id', $valid)
+            ->pluck('jadwal_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $baris = collect(array_diff($valid, $sudah))
+            ->map(fn ($id) => [
+                'jadwal_id' => $id,
+                'siswa_id' => $siswaId,
+                'kelas_siswa_id' => $pivotId,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ])
+            ->all();
+
+        if ($baris !== []) {
+            DB::table('jadwal_siswa')->insert($baris);
         }
     }
 }
