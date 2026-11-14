@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Collection;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 
 class Jadwal extends Model
@@ -36,6 +37,11 @@ class Jadwal extends Model
     public function presensi(): HasMany
     {
         return $this->hasMany(PresensiJadwal::class);
+    }
+
+    public function siswa(): BelongsToMany
+    {
+        return $this->belongsToMany(Siswa::class, 'jadwal_siswa')->withTimestamps();
     }
 
     private static function queryBeririsan(

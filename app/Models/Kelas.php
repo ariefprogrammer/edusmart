@@ -152,4 +152,19 @@ class Kelas extends Model
         return $this->kuota_maksimal !== null
             && $this->jumlahSiswaAktifSesi($guruId) >= $this->kuota_maksimal;
     }
+
+    /** Jumlah siswa aktif per jam (jadwal), dengan kunci id jadwal. */
+    public function jumlahSiswaAktifPerJadwal(): \Illuminate\Support\Collection
+    {
+        return DB::table('jadwal_siswa')
+            ->join('jadwal', 'jadwal.id', '=', 'jadwal_siswa.jadwal_id')
+            ->join('kelas_siswa', 'kelas_siswa.id', '=', 'jadwal_siswa.kelas_siswa_id')
+            ->join('siswa', 'siswa.id', '=', 'jadwal_siswa.siswa_id')
+            ->where('jadwal.kelas_id', $this->getKey())
+            ->where('kelas_siswa.is_active', true)
+            ->whereNull('siswa.deleted_at')
+            ->groupBy('jadwal_siswa.jadwal_id')
+            ->selectRaw('jadwal_siswa.jadwal_id, COUNT(*) as total')
+            ->pluck('total', 'jadwal_id');
+    }
 }

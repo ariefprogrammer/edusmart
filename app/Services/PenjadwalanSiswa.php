@@ -309,21 +309,104 @@ class PenjadwalanSiswa
     }
 
     /**
-     * Pindahkan siswa dari satu sesi (guru) ke sesi lain di program yang sama:
-     * seluruh jam di sesi asal dilepas, lalu jam di sesi tujuan ditambahkan.
+     * Pindahkan siswa dari satu jam ke jam lain (guru sama atau beda) di program yang sama.
+     * Mengembalikan false bila tidak ada jam tujuan yang valid (tidak ada yang diubah).
      */
-    public static function pindahSesi(int $siswaId, int $kelasId, int $guruAsal, array $jadwalTujuan): void
+    public static function pindahJam(int $siswaId, int $kelasId, int $jadwalAsal, array $jadwalTujuan): bool
     {
-        DB::transaction(function () use ($siswaId, $kelasId, $guruAsal, $jadwalTujuan) {
+        $valid = Jadwal::query()
+            ->where('kelas_id', $kelasId)
+            ->where('is_active', true)
+            ->where('id', '!=', $jadwalAsal)
+            ->whereIn('id', $jadwalTujuan)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if ($valid === []) {
+            return false;
+        }
+
+        DB::transaction(function () use ($siswaId, $kelasId, $jadwalAsal, $valid) {
             DB::table('jadwal_siswa')
                 ->where('siswa_id', $siswaId)
-                ->whereIn('jadwal_id', fn ($q) => $q->select('id')
-                    ->from('jadwal')
-                    ->where('kelas_id', $kelasId)
-                    ->where('guru_id', $guruAsal))
+                ->where('jadwal_id', $jadwalAsal)
                 ->delete();
 
-            self::tambahKeJadwal($siswaId, $kelasId, $jadwalTujuan);
+            self::tambahKeJadwal($siswaId, $kelasId, $valid);
         });
+
+        return true;
+    }
+
+    public static function labelJam(Jadwal $jadwal): string
+    {
+        return $jadwal->hari . ' ' . substr($jadwal->jam_mulai, 0, 5) . '–' . substr($jadwal->jam_selesai, 0, 5);
+    }
+
+    /** Opsi jam satu sesi, berlabel kuota: "Senin 07:00–09:00 (8/10)" atau "(10/10 — penuh)". */
+    public static function opsiJamSesiDenganKuota(Kelas $kelas, int $guruId): array
+    {
+        $jumlah = $kelas->jumlahSiswaAktifPerJadwal();
+        $maks = $kelas->kuota_maksimal;
+
+        return Jadwal::query()
+            ->where('kelas_id', $kelas->getKey())
+            ->where('guru_id', $guruId)
+            ->where('is_active', true)
+            ->get()
+            ->sortBy(fn (Jadwal $j) => [array_search($j->hari, self::HARI), $j->jam_mulai])
+            ->mapWithKeys(function (Jadwal $j) use ($jumlah, $maks) {
+                $terisi = (int) $jumlah->get($j->id, 0);
+
+                $label = self::labelJam($j) . ($maks === null
+                    ? " ({$terisi} siswa)"
+                    : " ({$terisi}/{$maks})" . ($terisi >= $maks ? ' — penuh' : ''));
+
+                return [$j->id => $label];
+            })
+            ->all();
+    }
+
+    /** Dari daftar jam ini, mana yang kuota maksimalnya sudah penuh. */
+    public static function idJamPenuh(Kelas $kelas, array $jadwalIds): array
+    {
+        $maks = $kelas->kuota_maksimal;
+
+        if ($maks === null) {
+            return [];
+        }
+
+        $jumlah = $kelas->jumlahSiswaAktifPerJadwal();
+
+        return collect($jadwalIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => (int) $jumlah->get($id, 0) >= $maks)
+            ->values()
+            ->all();
+    }
+
+    public static function pesanJamPenuh(array $jadwalIds): string
+    {
+        $jam = Jadwal::with('guru')
+            ->whereIn('id', $jadwalIds)
+            ->get()
+            ->map(fn (Jadwal $j) => self::labelJam($j) . ' (Guru ' . ($j->guru?->nama ?? '-') . ')');
+
+        return 'Kuota penuh untuk jam: ' . $jam->join(', ') . '.';
+    }
+
+    /** Apakah sesi ini masih punya minimal satu jam yang kuotanya belum penuh. */
+    public static function adaJamTersedia(Kelas $kelas, int $guruId): bool
+    {
+        $ids = Jadwal::query()
+            ->where('kelas_id', $kelas->getKey())
+            ->where('guru_id', $guruId)
+            ->where('is_active', true)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        return $ids !== [] && count(array_diff($ids, self::idJamPenuh($kelas, $ids))) > 0;
     }
 }
