@@ -593,7 +593,7 @@ class SiswaRelationManager extends RelationManager
             })
             ->modalSubmitAction(false)
             ->modalCancelActionLabel('Tutup')
-            ->modalWidth('lg');
+            ->modalWidth('3xl');
     }
 
     protected function aksiRiwayatSiswa(): Tables\Actions\Action
