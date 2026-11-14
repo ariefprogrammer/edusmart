@@ -85,12 +85,30 @@ class SiswaRelationManager extends RelationManager
                     ->tooltip(fn () => $this->getOwnerRecord()->isKuotaPenuh()
                         ? 'Kuota maksimal sudah tercapai'
                         : null)
-                    ->before(function (Tables\Actions\AttachAction $action) {
+                    ->before(function (array $data, Tables\Actions\AttachAction $action) {
                         // Pengaman di sisi server: tombol nonaktif saja tidak cukup
                         if ($this->getOwnerRecord()->isKuotaPenuh()) {
                             Notification::make()
                                 ->title('Kuota penuh')
                                 ->body('Siswa tidak dapat ditambahkan karena kuota maksimal sudah tercapai.')
+                                ->danger()
+                                ->send();
+
+                            $action->halt();
+                        }
+
+                        // Siswa nonaktif tidak boleh di-attach, meski dropdown sudah menyembunyikannya
+                        $siswaIds = collect((array) ($data['recordId'] ?? []))->filter()->all();
+
+                        $nonaktif = Siswa::query()
+                            ->whereIn('id', $siswaIds)
+                            ->where('is_active', false)
+                            ->pluck('nama');
+
+                        if ($nonaktif->isNotEmpty()) {
+                            Notification::make()
+                                ->title('Siswa nonaktif tidak dapat ditambahkan')
+                                ->body('Aktifkan siswa terlebih dahulu: ' . $nonaktif->join(', ') . '.')
                                 ->danger()
                                 ->send();
 
@@ -111,7 +129,9 @@ class SiswaRelationManager extends RelationManager
                     ->preloadRecordSelect()
                     ->recordSelectSearchColumns(['nama'])
                     ->recordSelectOptionsQuery(
-                        fn ($query) => $query->where('cabang_id', $this->getOwnerRecord()->cabang_id)
+                        fn ($query) => $query
+                            ->where('cabang_id', $this->getOwnerRecord()->cabang_id)
+                            ->where('siswa.is_active', true)
                     )
                     ->form(fn (Tables\Actions\AttachAction $action) => [
                         $action->getRecordSelect(),
