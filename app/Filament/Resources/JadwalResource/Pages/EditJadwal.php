@@ -3,15 +3,21 @@
 namespace App\Filament\Resources\JadwalResource\Pages;
 
 use App\Filament\Resources\JadwalResource;
+use App\Models\Guru;
 use App\Models\Jadwal;
 use Filament\Actions;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Filament\Support\Exceptions\Halt;
+use Illuminate\Support\HtmlString;
 
 class EditJadwal extends EditRecord
 {
     protected static string $resource = JadwalResource::class;
+
+    public bool $duplikatDikonfirmasi = false;
+    public string $pesanDuplikat = '';
+    public string $namaGuruDuplikat = '';
 
     protected function getHeaderActions(): array
     {
@@ -22,23 +28,21 @@ class EditJadwal extends EditRecord
 
     protected function mutateFormDataBeforeSave(array $data): array
     {
-        // Lapis kedua: cek bentrok guru / kelas sebelum perubahan disimpan.
-        // Nilai yang tidak ada di form (mis. cabang_id untuk non super_admin)
-        // diambil dari record yang sedang diedit.
         $record = $this->getRecord();
 
         $isActive = (bool) ($data['is_active'] ?? $record->is_active);
 
-        // Jadwal nonaktif tidak dihitung bentrok; saat diaktifkan baru dicek.
         if ($isActive) {
+            $cabangId = $data['cabang_id'] ?? $record->cabang_id;
+            $guruId = $data['guru_id'] ?? $record->guru_id;
+            $kelasId = $data['kelas_id'] ?? $record->kelas_id;
+            $hari = $data['hari'] ?? $record->hari;
+            $jamMulai = $data['jam_mulai'] ?? $record->jam_mulai;
+            $jamSelesai = $data['jam_selesai'] ?? $record->jam_selesai;
+
+            // Bentrok keras: guru yang sama
             $pesan = Jadwal::pesanBentrok(
-                $data['cabang_id'] ?? $record->cabang_id,
-                $data['guru_id'] ?? $record->guru_id,
-                $data['kelas_id'] ?? $record->kelas_id,
-                $data['hari'] ?? $record->hari,
-                $data['jam_mulai'] ?? $record->jam_mulai,
-                $data['jam_selesai'] ?? $record->jam_selesai,
-                $record->getKey(),
+                $cabangId, $guruId, $kelasId, $hari, $jamMulai, $jamSelesai, $record->getKey(),
             );
 
             if ($pesan) {
@@ -51,8 +55,48 @@ class EditJadwal extends EditRecord
 
                 throw new Halt();
             }
+
+            // Bentrok lunak: kelas yang sama dengan guru lain, minta konfirmasi
+            if (! $this->duplikatDikonfirmasi) {
+                $ada = Jadwal::pesanKelasSama(
+                    $cabangId, $guruId, $kelasId, $hari, $jamMulai, $jamSelesai, $record->getKey(),
+                );
+
+                if ($ada) {
+                    $this->pesanDuplikat = $ada;
+                    $this->namaGuruDuplikat = Guru::find($guruId)?->nama ?? '-';
+                    $this->mountAction('konfirmasiDuplikat');
+
+                    throw new Halt();
+                }
+            }
         }
 
         return $data;
+    }
+
+    public function konfirmasiDuplikatAction(): Actions\Action
+    {
+        return Actions\Action::make('konfirmasiDuplikat')
+            ->requiresConfirmation()
+            ->color('warning')
+            ->icon('heroicon-o-exclamation-triangle')
+            ->modalHeading('Jam ini sudah dijadwalkan dengan guru lain')
+            ->modalDescription(fn () => new HtmlString(
+                e($this->pesanDuplikat)
+                . '<br><br><strong>Tetap simpan jadwal yang sama untuk guru '
+                . e($this->namaGuruDuplikat) . '?</strong>'
+            ))
+            ->modalSubmitActionLabel('Ya, simpan')
+            ->modalCancelActionLabel('Batal')
+            ->action(function () {
+                $this->duplikatDikonfirmasi = true;
+
+                try {
+                    $this->save();
+                } finally {
+                    $this->duplikatDikonfirmasi = false;
+                }
+            });
     }
 }

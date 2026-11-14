@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Collection;
+use Illuminate\Database\Eloquent\Builder;
 
 
 class Jadwal extends Model
@@ -37,23 +38,13 @@ class Jadwal extends Model
         return $this->hasMany(PresensiJadwal::class);
     }
 
-    /**
-     * Cari jadwal AKTIF yang bentrok dengan jadwal yang akan dibuat / diubah.
-     *
-     * Bentrok jika: cabang sama, hari sama, rentang jam beririsan, dan
-     * (guru sama ATAU kelas sama). Jam yang hanya bersinggungan
-     * (09:00 selesai, 09:00 mulai) TIDAK dianggap bentrok.
-     * Jadwal nonaktif (is_active = false) tidak dihitung.
-     */
-    public static function cariBentrok(
+    private static function queryBeririsan(
         int|string $cabangId,
-        int|string $guruId,
-        int|string $kelasId,
         string $hari,
         string $jamMulai,
         string $jamSelesai,
         int|string|null $kecualiId = null,
-    ): Collection {
+    ): Builder {
         // Normalisasi ke H:i:s supaya perbandingan konsisten ("09:00" vs "09:00:00")
         $mulai = Carbon::parse($jamMulai)->format('H:i:s');
         $selesai = Carbon::parse($jamSelesai)->format('H:i:s');
@@ -65,16 +56,27 @@ class Jadwal extends Model
             ->where('is_active', true)
             ->where('jam_mulai', '<', $selesai)
             ->where('jam_selesai', '>', $mulai)
-            ->where(fn ($query) => $query
-                ->where('guru_id', $guruId)
-                ->orWhere('kelas_id', $kelasId))
-            ->when($kecualiId, fn ($query) => $query->where('id', '!=', $kecualiId))
-            ->get();
+            ->when($kecualiId, fn ($query) => $query->where('id', '!=', $kecualiId));
     }
 
     /**
-     * Versi pesan error dari cariBentrok(). Mengembalikan null jika tidak ada bentrok.
+     * Bentrok KERAS: guru yang sama sudah mengajar pada rentang jam yang beririsan.
+     * Jam yang hanya bersinggungan (selesai 09:00, mulai 09:00) tidak dianggap bentrok.
      */
+    public static function cariBentrok(
+        int|string $cabangId,
+        int|string $guruId,
+        int|string $kelasId,
+        string $hari,
+        string $jamMulai,
+        string $jamSelesai,
+        int|string|null $kecualiId = null,
+    ): Collection {
+        return static::queryBeririsan($cabangId, $hari, $jamMulai, $jamSelesai, $kecualiId)
+            ->where('guru_id', $guruId)
+            ->get();
+    }
+
     public static function pesanBentrok(
         int|string $cabangId,
         int|string $guruId,
@@ -90,16 +92,40 @@ class Jadwal extends Model
             return null;
         }
 
-        return $bentrok->map(function (self $jadwal) use ($guruId) {
+        return $bentrok->map(function (self $jadwal) {
             $waktu = $jadwal->hari . ' ' . substr($jadwal->jam_mulai, 0, 5) . '–' . substr($jadwal->jam_selesai, 0, 5);
 
-            if ((int) $jadwal->guru_id === (int) $guruId) {
-                return 'Guru ' . ($jadwal->guru?->nama ?? '-') . ' sudah dijadwalkan di kelas '
-                    . ($jadwal->kelas?->nama_kelas ?? '-') . ' pada ' . $waktu . '.';
-            }
-
-            return 'Kelas ' . ($jadwal->kelas?->nama_kelas ?? '-') . ' sudah memiliki jadwal pada '
-                . $waktu . ' (guru ' . ($jadwal->guru?->nama ?? '-') . ').';
+            return 'Guru ' . ($jadwal->guru?->nama ?? '-') . ' sudah dijadwalkan di kelas '
+                . ($jadwal->kelas?->nama_kelas ?? '-') . ' pada ' . $waktu . '.';
         })->unique()->implode(' ');
+    }
+
+    /**
+     * Bentrok LUNAK: kelas yang sama sudah dijadwalkan pada jam yang beririsan
+     * dengan guru LAIN. Boleh dibuat, tapi harus dikonfirmasi pengguna.
+     */
+    public static function pesanKelasSama(
+        int|string $cabangId,
+        int|string $guruId,
+        int|string $kelasId,
+        string $hari,
+        string $jamMulai,
+        string $jamSelesai,
+        int|string|null $kecualiId = null,
+    ): ?string {
+        $ada = static::queryBeririsan($cabangId, $hari, $jamMulai, $jamSelesai, $kecualiId)
+            ->where('kelas_id', $kelasId)
+            ->where('guru_id', '!=', $guruId)
+            ->get();
+
+        if ($ada->isEmpty()) {
+            return null;
+        }
+
+        return $ada->map(fn (self $jadwal) => 'Kelas ' . ($jadwal->kelas?->nama_kelas ?? '-')
+            . ' sudah dijadwalkan pada ' . $jadwal->hari . ' '
+            . substr($jadwal->jam_mulai, 0, 5) . '–' . substr($jadwal->jam_selesai, 0, 5)
+            . ' dengan guru ' . ($jadwal->guru?->nama ?? '-') . '.')
+            ->unique()->implode(' ');
     }
 }
