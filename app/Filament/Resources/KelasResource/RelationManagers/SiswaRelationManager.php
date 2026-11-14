@@ -97,16 +97,16 @@ class SiswaRelationManager extends RelationManager
                             $action->halt();
                         }
                     })
+                    // Pilihan jam disimpan setelah siswa berhasil di-attach
                     ->after(function (array $data) {
-                        if (blank($data['recordId'] ?? null)) {
-                            return;
-                        }
+                        $kelasId = (int) $this->getOwnerRecord()->getKey();
+                        $jadwalIds = array_map('intval', $data['jadwal_ids'] ?? []);
 
-                        PenjadwalanSiswa::simpanUntukKelas(
-                            (int) $data['recordId'],
-                            (int) $this->getOwnerRecord()->getKey(),
-                            array_map('intval', $data['jadwal_ids'] ?? []),
-                        );
+                        foreach ((array) ($data['recordId'] ?? []) as $siswaId) {
+                            if (filled($siswaId)) {
+                                PenjadwalanSiswa::simpanUntukKelas((int) $siswaId, $kelasId, $jadwalIds);
+                            }
+                        }
                     })
                     ->preloadRecordSelect()
                     ->recordSelectSearchColumns(['nama'])
@@ -115,12 +115,15 @@ class SiswaRelationManager extends RelationManager
                     )
                     ->form(fn (Tables\Actions\AttachAction $action) => [
                         $action->getRecordSelect(),
+
                         Forms\Components\DatePicker::make('tanggal_gabung')
                             ->native(false)
                             ->default(now()),
+
                         Forms\Components\Toggle::make('is_active')
                             ->label('Aktif di Program Ini')
                             ->default(true),
+
                         Forms\Components\Select::make('jadwal_ids')
                             ->label('Pilih jam')
                             ->multiple()
@@ -129,18 +132,26 @@ class SiswaRelationManager extends RelationManager
                             ->required()
                             ->helperText('Pilih satu atau lebih jam yang diikuti siswa di program ini.')
                             ->rule(fn (Get $get): \Closure => function (string $attribute, $value, \Closure $fail) use ($get) {
-                                // Program yang dimasukkan nonaktif tidak dihitung bentrok (dicek saat diaktifkan)
-                                if (! $get('is_active') || blank($get('recordId'))) {
+                                // Program yang dimasukkan dalam keadaan nonaktif tidak dihitung bentrok
+                                if (! $get('is_active')) {
                                     return;
                                 }
 
-                                $pesan = PenjadwalanSiswa::pesanBentrok(
-                                    array_map('intval', (array) $value),
-                                    (int) $get('recordId'),
-                                );
+                                foreach ((array) $get('recordId') as $siswaId) {
+                                    if (blank($siswaId)) {
+                                        continue;
+                                    }
 
-                                if ($pesan) {
-                                    $fail($pesan);
+                                    $pesan = PenjadwalanSiswa::pesanBentrok(
+                                        array_map('intval', (array) $value),
+                                        (int) $siswaId,
+                                    );
+
+                                    if ($pesan) {
+                                        $fail($pesan);
+
+                                        return;
+                                    }
                                 }
                             }),
                     ]),
