@@ -128,7 +128,7 @@ class PenjadwalanSiswa
      * terhadap jam aktif siswa di program lain. Jam yang hanya bersinggungan
      * (selesai 09:00, mulai 09:00) tidak dianggap bentrok.
      */
-    public static function pesanBentrok(array $jadwalIds, ?int $siswaId = null): ?string
+    public static function pesanBentrok(array $jadwalIds, ?int $siswaId = null, array $abaikan = []): ?string
     {
         if ($jadwalIds === []) {
             return null;
@@ -148,7 +148,7 @@ class PenjadwalanSiswa
         if ($siswaId) {
             $lama = Jadwal::with('kelas')
                 ->where('is_active', true)
-                ->whereNotIn('id', $jadwalIds)
+                ->whereNotIn('id', array_merge($jadwalIds, $abaikan))
                 ->whereIn('id', fn ($q) => $q->select('jadwal_siswa.jadwal_id')
                     ->from('jadwal_siswa')
                     ->join('kelas_siswa', 'kelas_siswa.id', '=', 'jadwal_siswa.kelas_siswa_id')
@@ -306,5 +306,24 @@ class PenjadwalanSiswa
         if ($baris !== []) {
             DB::table('jadwal_siswa')->insert($baris);
         }
+    }
+
+    /**
+     * Pindahkan siswa dari satu sesi (guru) ke sesi lain di program yang sama:
+     * seluruh jam di sesi asal dilepas, lalu jam di sesi tujuan ditambahkan.
+     */
+    public static function pindahSesi(int $siswaId, int $kelasId, int $guruAsal, array $jadwalTujuan): void
+    {
+        DB::transaction(function () use ($siswaId, $kelasId, $guruAsal, $jadwalTujuan) {
+            DB::table('jadwal_siswa')
+                ->where('siswa_id', $siswaId)
+                ->whereIn('jadwal_id', fn ($q) => $q->select('id')
+                    ->from('jadwal')
+                    ->where('kelas_id', $kelasId)
+                    ->where('guru_id', $guruAsal))
+                ->delete();
+
+            self::tambahKeJadwal($siswaId, $kelasId, $jadwalTujuan);
+        });
     }
 }
