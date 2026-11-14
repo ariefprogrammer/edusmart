@@ -115,6 +115,9 @@ class KelasResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn (Builder $query) => $query->withCount([
+                'siswa as siswa_aktif_count' => fn ($q) => $q->where('kelas_siswa.is_active', true),
+            ]))
             ->columns([
                 Tables\Columns\TextColumn::make('cabang.nama_cabang')
                     ->label('Cabang')
@@ -126,6 +129,10 @@ class KelasResource extends Resource
                 Tables\Columns\ViewColumn::make('icon')
                     ->label('Icon')
                     ->view('filament.tables.columns.kelas-icon'),
+                Tables\Columns\TextColumn::make('siswa_aktif_count')
+                    ->label('Jumlah Siswa')
+                    ->alignment(Alignment::Center)
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('kuota_minimal')
                     ->label('Kuota Min')
                     ->alignment(Alignment::Center),
