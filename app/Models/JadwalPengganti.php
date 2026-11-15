@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use App\Services\PenjadwalanSiswa;
 
 class JadwalPengganti extends Model
 {
@@ -19,7 +20,7 @@ class JadwalPengganti extends Model
     public const TEKS_PENANDA = 'dilaksanakan pertemuan pengganti';
 
     protected $fillable = [
-        'cabang_id', 'kelas_id', 'jadwal_id', 'guru_id',
+        'cabang_id', 'kelas_id', 'jadwal_id', 'jadwal_tujuan_id', 'guru_id',
         'tanggal_seharusnya', 'tanggal_pengganti', 'jam_mulai', 'jam_selesai',
         'alasan', 'status', 'selesai_pada', 'dibuat_oleh',
     ];
@@ -62,6 +63,11 @@ class JadwalPengganti extends Model
             ->withTimestamps();
     }
 
+    public function jadwalTujuan(): BelongsTo
+    {
+        return $this->belongsTo(Jadwal::class, 'jadwal_tujuan_id');
+    }
+
     /** Nama hari (sesuai enum jadwal.hari) dari sebuah tanggal, tidak bergantung locale. */
     public static function namaHari(Carbon|string $tanggal): string
     {
@@ -71,7 +77,7 @@ class JadwalPengganti extends Model
         ][Carbon::parse($tanggal)->dayOfWeekIso];
     }
 
-    /** Jadwal pengganti lain (status terjadwal) yang bentrok di tanggal yang sama. */
+    /** Jadwal pengganti lain (status terjadwal) milik guru yang sama yang bentrok di tanggal yang sama. */
     public static function cariBentrokPengganti(
         int|string $cabangId,
         int|string $guruId,
@@ -80,6 +86,7 @@ class JadwalPengganti extends Model
         string $jamMulai,
         string $jamSelesai,
         int|string|null $kecualiId = null,
+        int|string|null $jadwalTujuanId = null,
     ): Collection {
         $mulai = Carbon::parse($jamMulai)->format('H:i:s');
         $selesai = Carbon::parse($jamSelesai)->format('H:i:s');
@@ -91,9 +98,12 @@ class JadwalPengganti extends Model
             ->where('status', self::STATUS_TERJADWAL)
             ->where('jam_mulai', '<', $selesai)
             ->where('jam_selesai', '>', $mulai)
-            ->where(fn ($query) => $query
-                ->where('guru_id', $guruId)
-                ->orWhere('kelas_id', $kelasId))
+            // Hanya guru yang sama yang dianggap bentrok; program yang sama boleh punya sesi paralel
+            ->where('guru_id', $guruId)
+            // Pengganti lain yang menuju jadwal tujuan yang sama berbagi satu sesi, bukan bentrok
+            ->when($jadwalTujuanId, fn ($query) => $query->where(fn ($q) => $q
+                ->whereNull('jadwal_tujuan_id')
+                ->orWhere('jadwal_tujuan_id', '!=', $jadwalTujuanId)))
             ->when($kecualiId, fn ($query) => $query->where('id', '!=', $kecualiId))
             ->get();
     }
@@ -102,6 +112,8 @@ class JadwalPengganti extends Model
      * Pesan bentrok untuk jadwal pengganti: dicek terhadap jadwal reguler aktif
      * (lewat Jadwal::pesanBentrok pada hari dari tanggal_pengganti) dan terhadap
      * jadwal pengganti lain. Mengembalikan null jika tidak ada bentrok.
+     * $jadwalTujuanId dikecualikan dari cek reguler karena guru dan jamnya memang
+     * sama dengan jadwal pengganti ini.
      */
     public static function pesanBentrok(
         int|string $cabangId,
@@ -111,6 +123,7 @@ class JadwalPengganti extends Model
         string $jamMulai,
         string $jamSelesai,
         int|string|null $kecualiId = null,
+        int|string|null $jadwalTujuanId = null,
     ): ?string {
         $pesan = [];
 
@@ -118,6 +131,7 @@ class JadwalPengganti extends Model
             $cabangId, $guruId, $kelasId,
             static::namaHari($tanggalPengganti),
             $jamMulai, $jamSelesai,
+            $jadwalTujuanId,
         );
 
         if ($reguler) {
@@ -125,21 +139,80 @@ class JadwalPengganti extends Model
         }
 
         $pengganti = static::cariBentrokPengganti(
-            $cabangId, $guruId, $kelasId, $tanggalPengganti, $jamMulai, $jamSelesai, $kecualiId,
+            $cabangId, $guruId, $kelasId, $tanggalPengganti, $jamMulai, $jamSelesai, $kecualiId, $jadwalTujuanId,
         );
 
         foreach ($pengganti as $item) {
             $waktu = $item->tanggal_pengganti->format('d-m-Y') . ' '
                 . substr($item->jam_mulai, 0, 5) . '–' . substr($item->jam_selesai, 0, 5);
 
-            $pesan[] = (int) $item->guru_id === (int) $guruId
-                ? 'Guru ' . ($item->guru?->nama ?? '-') . ' sudah memiliki jadwal pengganti di kelas '
-                    . ($item->kelas?->nama_kelas ?? '-') . ' pada ' . $waktu . '.'
-                : 'Kelas ' . ($item->kelas?->nama_kelas ?? '-') . ' sudah memiliki jadwal pengganti pada '
-                    . $waktu . ' (guru ' . ($item->guru?->nama ?? '-') . ').';
+            $pesan[] = 'Guru ' . ($item->guru?->nama ?? '-') . ' sudah memiliki jadwal pengganti di kelas '
+                . ($item->kelas?->nama_kelas ?? '-') . ' pada ' . $waktu . '.';
         }
 
         return $pesan ? implode(' ', array_unique($pesan)) : null;
+    }
+
+    /**
+     * Cek apakah kuota jadwal tujuan pada tanggal pengganti cukup untuk siswa ini.
+     * Isi jadwal tujuan = peserta tetapnya (siswa aktif) + siswa dari jadwal pengganti lain
+     * (status terjadwal) yang menuju jadwal dan tanggal yang sama. Siswa yang sudah termasuk
+     * di dalamnya tidak dihitung sebagai tambahan. Mengembalikan pesan jika tidak cukup, atau null.
+     */
+    public static function pesanKuotaTujuan(
+        int|string $jadwalTujuanId,
+        string $tanggalPengganti,
+        array $siswaIds,
+        int|string|null $kecualiId = null,
+    ): ?string {
+        $tujuan = Jadwal::with(['kelas', 'guru'])->find($jadwalTujuanId);
+        $siswaIds = array_map('intval', $siswaIds);
+
+        if (! $tujuan || $siswaIds === []) {
+            return null;
+        }
+
+        $maks = $tujuan->kelas?->kuota_maksimal;
+
+        // Kuota kosong = tanpa batas
+        if ($maks === null) {
+            return null;
+        }
+
+        $tanggal = Carbon::parse($tanggalPengganti)->toDateString();
+
+        // Peserta tetap jadwal tujuan: siswa aktif di program, tidak dihapus
+        $tetap = DB::table('jadwal_siswa')
+            ->join('kelas_siswa', 'kelas_siswa.id', '=', 'jadwal_siswa.kelas_siswa_id')
+            ->join('siswa', 'siswa.id', '=', 'jadwal_siswa.siswa_id')
+            ->where('jadwal_siswa.jadwal_id', $tujuan->getKey())
+            ->where('kelas_siswa.is_active', true)
+            ->whereNull('siswa.deleted_at')
+            ->pluck('jadwal_siswa.siswa_id');
+
+        // Siswa dari jadwal pengganti lain yang menuju jadwal dan tanggal yang sama
+        $titipan = DB::table('jadwal_pengganti_siswa as ps')
+            ->join('jadwal_pengganti as jp', 'jp.id', '=', 'ps.jadwal_pengganti_id')
+            ->where('jp.jadwal_tujuan_id', $tujuan->getKey())
+            ->whereDate('jp.tanggal_pengganti', $tanggal)
+            ->where('jp.status', self::STATUS_TERJADWAL)
+            ->when($kecualiId, fn ($query) => $query->where('jp.id', '!=', $kecualiId))
+            ->pluck('ps.siswa_id');
+
+        $terisi = $tetap->merge($titipan)->map(fn ($id) => (int) $id)->unique()->values();
+        $baru = collect($siswaIds)->diff($terisi)->values();
+
+        if ($terisi->count() + $baru->count() <= $maks) {
+            return null;
+        }
+
+        $sisa = max(0, $maks - $terisi->count());
+        $label = PenjadwalanSiswa::labelJam($tujuan) . ' (Guru ' . ($tujuan->guru?->nama ?? '-') . ')';
+
+        return 'Kuota jadwal pengganti tidak mencukupi. ' . $label . ' pada ' . Carbon::parse($tanggal)->format('d-m-Y')
+            . ' berkapasitas ' . $maks . ' siswa, sudah terisi ' . $terisi->count()
+            . ' (peserta tetap dan siswa dari jadwal pengganti lain), sisa ' . $sisa
+            . ', sedangkan siswa baru yang akan ikut berjumlah ' . $baru->count() . '.';
     }
 
     /** Status untuk tampilan: jadwal terjadwal yang tanggalnya sudah lewat disebut "terlewat". */
@@ -163,6 +236,7 @@ class JadwalPengganti extends Model
         array $siswaIds,
         int|string|null $kecualiId = null,
         array $sudahTerdaftarIds = [],
+        int|string|null $jadwalId = null,
     ): ?string {
         $siswaIds = array_map('intval', $siswaIds);
 
@@ -190,6 +264,23 @@ class JadwalPengganti extends Model
             if ($tidakValid) {
                 $pesan[] = 'Bukan siswa aktif di kelas ini: '
                     . Siswa::withTrashed()->whereIn('id', $tidakValid)->pluck('nama')->implode(', ') . '.';
+            }
+
+            // Siswa baru harus peserta jadwal reguler yang digantikan
+            if ($jadwalId && $valid) {
+                $peserta = DB::table('jadwal_siswa')
+                    ->where('jadwal_id', $jadwalId)
+                    ->whereIn('siswa_id', $valid)
+                    ->pluck('siswa_id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all();
+
+                $bukanPeserta = array_diff($valid, $peserta);
+
+                if ($bukanPeserta) {
+                    $pesan[] = 'Bukan peserta jadwal yang digantikan: '
+                        . Siswa::withTrashed()->whereIn('id', $bukanPeserta)->pluck('nama')->implode(', ') . '.';
+                }
             }
         }
 

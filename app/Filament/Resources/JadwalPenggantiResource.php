@@ -26,6 +26,9 @@ use Filament\Support\Enums\Alignment;
 use Filament\Tables\Filters\SelectFilter;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Guru;
+use App\Models\Kelas;
+use App\Services\PenjadwalanSiswa;
+use Filament\Notifications\Notification;
 
 class JadwalPenggantiResource extends Resource
 {
@@ -48,6 +51,7 @@ class JadwalPenggantiResource extends Resource
                 ->preload()
                 ->required()
                 ->live()
+                ->columnSpanFull()
                 ->visible(fn () => auth()->user()->hasRole('super_admin'))
                 ->default(fn () => auth()->user()->cabang->first()?->id)
                 ->dehydrated(),
@@ -61,11 +65,16 @@ class JadwalPenggantiResource extends Resource
                         ->where('cabang_id', $get('cabang_id') ?? auth()->user()->cabang->first()?->id),
                 )
                 ->searchable()
+                ->columnSpanFull()
                 ->preload()
                 ->required()
                 ->live()
                 ->afterStateUpdated(function (Set $set) {
                     $set('jadwal_id', null);
+                    $set('jadwal_tujuan_id', null);
+                    $set('guru_id', null);
+                    $set('jam_mulai', null);
+                    $set('jam_selesai', null);
                     $set('siswa', []);
                 }),
 
@@ -84,13 +93,16 @@ class JadwalPenggantiResource extends Resource
                     ->all())
                 ->required()
                 ->live()
-                ->afterStateUpdated(function ($state, Set $set) {
-                    $jadwal = $state ? Jadwal::find($state) : null;
+                ->afterStateUpdated(function ($state, Get $get, Set $set) {
+                    // Daftar siswa mengikuti jadwal yang digantikan, jadi pilihan sebelumnya dikosongkan
+                    $set('siswa', []);
 
-                    if ($jadwal) {
-                        $set('guru_id', $jadwal->guru_id);
-                        $set('jam_mulai', $jadwal->jam_mulai);
-                        $set('jam_selesai', $jadwal->jam_selesai);
+                    // Jadwal pengganti tidak boleh sama dengan jadwal yang digantikan
+                    if (filled($state) && (int) $get('jadwal_tujuan_id') === (int) $state) {
+                        $set('jadwal_tujuan_id', null);
+                        $set('guru_id', null);
+                        $set('jam_mulai', null);
+                        $set('jam_selesai', null);
                     }
                 }),
 
@@ -103,6 +115,66 @@ class JadwalPenggantiResource extends Resource
                     if ($jadwal && JadwalPengganti::namaHari($value) !== $jadwal->hari) {
                         $fail('Tanggal ini jatuh pada hari ' . JadwalPengganti::namaHari($value)
                             . ', sedangkan jadwal reguler yang dipilih adalah hari ' . $jadwal->hari . '.');
+                    }
+                }),
+
+            Select::make('jadwal_tujuan_id')
+                ->label('Jadwal Pengganti')
+                ->searchable()
+                ->required(fn (string $operation) => $operation === 'create')
+                ->live()
+                ->helperText('Sesi lain di program ini yang dipakai sebagai pengganti. Guru dan jam terisi otomatis dari jadwal yang dipilih.')
+                // Jadwal aktif lain di program ini, selain jadwal yang digantikan
+                ->options(function (Get $get) {
+                    if (blank($get('kelas_id'))) {
+                        return [];
+                    }
+
+                    $kelas = Kelas::find($get('kelas_id'));
+                    $jumlah = $kelas?->jumlahSiswaAktifPerJadwal() ?? collect();
+                    $maks = $kelas?->kuota_maksimal;
+                    $urutanHari = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+
+                    return Jadwal::query()
+                        ->with('guru')
+                        ->where('kelas_id', $get('kelas_id'))
+                        ->where('is_active', true)
+                        ->when(filled($get('jadwal_id')), fn ($q) => $q->where('id', '!=', $get('jadwal_id')))
+                        ->get()
+                        ->sortBy(fn (Jadwal $j) => [array_search($j->hari, $urutanHari), $j->jam_mulai])
+                        ->mapWithKeys(function (Jadwal $j) use ($jumlah, $maks) {
+                            $terisi = (int) $jumlah->get($j->id, 0);
+
+                            return [
+                                $j->id => PenjadwalanSiswa::labelJam($j) . ' · ' . ($j->guru?->nama ?? '-')
+                                    . ' (' . $terisi . ($maks !== null ? "/{$maks}" : '') . ' siswa)',
+                            ];
+                        })
+                        ->all();
+                })
+                ->afterStateUpdated(function ($state, Set $set) {
+                    $tujuan = $state ? Jadwal::find($state) : null;
+
+                    // Guru dan jam mengikuti jadwal pengganti; dikosongkan bila pilihan dihapus
+                    $set('guru_id', $tujuan?->guru_id);
+                    $set('jam_mulai', $tujuan?->jam_mulai);
+                    $set('jam_selesai', $tujuan?->jam_selesai);
+                })
+                ->rule(fn (Get $get): Closure => function (string $attribute, $value, Closure $fail) use ($get) {
+                    if (blank($value)) {
+                        return;
+                    }
+
+                    $tujuan = Jadwal::find($value);
+
+                    if (! $tujuan || (int) $tujuan->kelas_id !== (int) $get('kelas_id') || ! $tujuan->is_active) {
+                        $fail('Jadwal pengganti harus jadwal aktif di kelas / program yang dipilih.');
+
+                        return;
+                    }
+
+                    if ((int) $tujuan->getKey() === (int) $get('jadwal_id')) {
+                        $fail('Jadwal pengganti tidak boleh sama dengan jadwal yang digantikan.');
                     }
                 }),
 
@@ -123,6 +195,15 @@ class JadwalPenggantiResource extends Resource
                     if (Carbon::parse($value)->lt(today())) {
                         $fail('Tanggal pengganti tidak boleh di masa lalu.');
                     }
+                })
+                // Tanggal harus jatuh di hari jadwal pengganti yang dipilih
+                ->rule(fn (Get $get): Closure => function (string $attribute, $value, Closure $fail) use ($get) {
+                    $tujuan = filled($value) && filled($get('jadwal_tujuan_id')) ? Jadwal::find($get('jadwal_tujuan_id')) : null;
+
+                    if ($tujuan && JadwalPengganti::namaHari($value) !== $tujuan->hari) {
+                        $fail('Tanggal ini jatuh pada hari ' . JadwalPengganti::namaHari($value)
+                            . ', sedangkan jadwal pengganti yang dipilih adalah hari ' . $tujuan->hari . '.');
+                    }
                 }),
 
             Select::make('guru_id')
@@ -134,6 +215,7 @@ class JadwalPenggantiResource extends Resource
                         ->where('cabang_id', $get('cabang_id') ?? auth()->user()->cabang->first()?->id),
                 )
                 ->searchable()
+                ->columnSpanFull()
                 ->preload()
                 ->required()
                 ->rule(fn (Get $get, ?Model $record): Closure => function (string $attribute, $value, Closure $fail) use ($get, $record) {
@@ -152,7 +234,9 @@ class JadwalPenggantiResource extends Resource
                     }
 
                     $pesan = JadwalPengganti::pesanBentrok(
-                        $cabangId, $value, $kelasId, $tanggal, $jamMulai, $jamSelesai, $record?->getKey(),
+                        $cabangId, $value, $kelasId, $tanggal, $jamMulai, $jamSelesai,
+                        $record?->getKey(),
+                        $get('jadwal_tujuan_id'),
                     );
 
                     if ($pesan) {
@@ -183,12 +267,18 @@ class JadwalPenggantiResource extends Resource
                         ->where('siswa.is_active', true)
                         ->whereHas('kelasList', fn ($q) => $q
                             ->where('kelas.id', $get('kelas_id'))
-                            ->where('kelas_siswa.is_active', true)),
+                            ->where('kelas_siswa.is_active', true))
+                        // Hanya siswa yang terdaftar di jadwal reguler yang digantikan
+                        ->whereIn('siswa.id', fn ($sub) => $sub
+                            ->select('jadwal_siswa.siswa_id')
+                            ->from('jadwal_siswa')
+                            ->where('jadwal_siswa.jadwal_id', $get('jadwal_id') ?: 0)),
                 )
                 ->multiple()
                 ->searchable()
                 ->preload()
                 ->required()
+                ->helperText('Hanya siswa yang terdaftar di jadwal reguler yang digantikan. Pilih jadwal yang digantikan terlebih dahulu.')
                 ->columnSpanFull()
                 ->rule(fn (Get $get, ?Model $record): Closure => function (string $attribute, $value, Closure $fail) use ($get, $record) {
                     $kelasId = $get('kelas_id');
@@ -204,9 +294,36 @@ class JadwalPenggantiResource extends Resource
                         (array) $value,
                         $record?->getKey(),
                         $record?->exists ? $record->siswa()->pluck('siswa.id')->all() : [],
+                        $get('jadwal_id'),
                     );
 
                     if ($pesan) {
+                        $fail($pesan);
+                    }
+                })
+                // Kuota jadwal pengganti harus cukup untuk menampung siswa yang dimasukkan
+                ->rule(fn (Get $get, ?Model $record): Closure => function (string $attribute, $value, Closure $fail) use ($get, $record) {
+                    $tujuanId = $get('jadwal_tujuan_id');
+                    $tanggal = $get('tanggal_pengganti');
+
+                    if (blank($value) || blank($tujuanId) || blank($tanggal)) {
+                        return;
+                    }
+
+                    $pesan = JadwalPengganti::pesanKuotaTujuan(
+                        $tujuanId,
+                        $tanggal,
+                        (array) $value,
+                        $record?->getKey(),
+                    );
+
+                    if ($pesan) {
+                        Notification::make()
+                            ->danger()
+                            ->title('Kuota jadwal pengganti tidak mencukupi')
+                            ->body($pesan)
+                            ->send();
+
                         $fail($pesan);
                     }
                 }),
@@ -284,10 +401,13 @@ class JadwalPenggantiResource extends Resource
         return false;
     }
 
-    /** Mengembalikan jadwal reguler jika guru yang dipilih berbeda dari gurunya; selain itu null. */
+    /** Mengembalikan jadwal acuan jika guru yang dipilih berbeda dari gurunya; selain itu null. */
     public static function jadwalDenganGuruBerbeda(?array $data): ?Jadwal
     {
-        $jadwalId = $data['jadwal_id'] ?? null;
+        // Acuan: jadwal pengganti; data lama tanpa jadwal pengganti memakai jadwal yang digantikan
+        $jadwalId = filled($data['jadwal_tujuan_id'] ?? null)
+            ? $data['jadwal_tujuan_id']
+            : ($data['jadwal_id'] ?? null);
         $guruId = $data['guru_id'] ?? null;
 
         if (blank($jadwalId) || blank($guruId)) {
@@ -304,7 +424,7 @@ class JadwalPenggantiResource extends Resource
         $jadwal = static::jadwalDenganGuruBerbeda($data);
         $guruBaru = Guru::find($data['guru_id'] ?? null)?->nama ?? '-';
 
-        return 'Jadwal reguler ini diampu oleh ' . ($jadwal?->guru?->nama ?? '-')
+        return 'Jadwal yang dipilih diampu oleh ' . ($jadwal?->guru?->nama ?? '-')
             . ', tetapi guru pengganti yang dipilih adalah ' . $guruBaru . '. Lanjutkan?';
     }
 

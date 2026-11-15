@@ -3,11 +3,10 @@
 namespace App\Filament\Resources\JadwalPenggantiResource\Pages;
 
 use App\Filament\Resources\JadwalPenggantiResource;
-use Filament\Actions;
-use Filament\Resources\Pages\EditRecord;
 use App\Models\JadwalPengganti;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
+use Filament\Resources\Pages\EditRecord;
 use Filament\Support\Exceptions\Halt;
 
 class EditJadwalPengganti extends EditRecord
@@ -30,7 +29,7 @@ class EditJadwalPengganti extends EditRecord
             ->action(fn () => $this->save())
             ->keyBindings(['mod+s'])
             ->requiresConfirmation($guruBerbeda)
-            ->modalHeading(fn (): ?string => $guruBerbeda() ? 'Guru berbeda dari jadwal reguler' : null)
+            ->modalHeading(fn (): ?string => $guruBerbeda() ? 'Guru berbeda dari jadwal yang dipilih' : null)
             ->modalDescription(fn (): ?string => $guruBerbeda() ? JadwalPenggantiResource::pesanGuruBerbeda($this->data) : null)
             ->modalSubmitActionLabel(fn (): ?string => $guruBerbeda() ? 'Ya, lanjutkan' : null);
     }
@@ -39,23 +38,38 @@ class EditJadwalPengganti extends EditRecord
     {
         $record = $this->getRecord();
 
+        $siswaIds = $this->data['siswa'] ?? [];
+        $tanggalPengganti = $data['tanggal_pengganti'] ?? $record->tanggal_pengganti->toDateString();
+
+        // Jadwal tujuan yang sengaja dikosongkan tidak boleh kembali ke nilai lama
+        $jadwalTujuanId = array_key_exists('jadwal_tujuan_id', $data)
+            ? $data['jadwal_tujuan_id']
+            : $record->jadwal_tujuan_id;
+
+        // Lapis kedua: cek ulang tepat sebelum menyimpan
         $pesan = array_filter([
             JadwalPengganti::pesanBentrok(
                 $data['cabang_id'] ?? $record->cabang_id,
                 $data['guru_id'] ?? $record->guru_id,
                 $data['kelas_id'] ?? $record->kelas_id,
-                $data['tanggal_pengganti'] ?? $record->tanggal_pengganti->toDateString(),
+                $tanggalPengganti,
                 $data['jam_mulai'] ?? $record->jam_mulai,
                 $data['jam_selesai'] ?? $record->jam_selesai,
                 $record->getKey(),
+                $jadwalTujuanId,
             ),
             JadwalPengganti::pesanSiswaBermasalah(
                 $data['kelas_id'] ?? $record->kelas_id,
                 $data['tanggal_seharusnya'] ?? $record->tanggal_seharusnya->toDateString(),
-                $this->data['siswa'] ?? [],
+                $siswaIds,
                 $record->getKey(),
                 $record->siswa()->pluck('siswa.id')->all(),
+                $data['jadwal_id'] ?? $record->jadwal_id,
             ),
+            // Data lama tanpa jadwal tujuan tidak dicek kuotanya
+            filled($jadwalTujuanId)
+                ? JadwalPengganti::pesanKuotaTujuan($jadwalTujuanId, $tanggalPengganti, $siswaIds, $record->getKey())
+                : null,
         ]);
 
         if ($pesan) {

@@ -3,13 +3,12 @@
 namespace App\Filament\Resources\JadwalPenggantiResource\Pages;
 
 use App\Filament\Resources\JadwalPenggantiResource;
-use Filament\Actions;
-use Filament\Resources\Pages\CreateRecord;
 use App\Models\JadwalPengganti;
+use Filament\Actions\Action;
 use Filament\Notifications\Notification;
+use Filament\Resources\Pages\CreateRecord;
 use Filament\Support\Exceptions\Halt;
 use Illuminate\Database\Eloquent\Model;
-use Filament\Actions\Action;
 
 class CreateJadwalPengganti extends CreateRecord
 {
@@ -35,21 +34,33 @@ class CreateJadwalPengganti extends CreateRecord
             ->action(fn () => $this->create())
             ->keyBindings(['mod+s'])
             ->requiresConfirmation($guruBerbeda)
-            ->modalHeading(fn (): ?string => $guruBerbeda() ? 'Guru berbeda dari jadwal reguler' : null)
+            ->modalHeading(fn (): ?string => $guruBerbeda() ? 'Guru berbeda dari jadwal yang dipilih' : null)
             ->modalDescription(fn (): ?string => $guruBerbeda() ? JadwalPenggantiResource::pesanGuruBerbeda($this->data) : null)
             ->modalSubmitActionLabel(fn (): ?string => $guruBerbeda() ? 'Ya, lanjutkan' : null);
     }
 
     protected function handleRecordCreation(array $data): Model
     {
+        $siswaIds = $this->data['siswa'] ?? [];
+        $jadwalTujuanId = $data['jadwal_tujuan_id'] ?? null;
+
+        // Lapis kedua: cek ulang tepat sebelum menyimpan
         $pesan = array_filter([
             JadwalPengganti::pesanBentrok(
                 $data['cabang_id'], $data['guru_id'], $data['kelas_id'],
                 $data['tanggal_pengganti'], $data['jam_mulai'], $data['jam_selesai'],
+                null,
+                $jadwalTujuanId,
             ),
             JadwalPengganti::pesanSiswaBermasalah(
-                $data['kelas_id'], $data['tanggal_seharusnya'], $this->data['siswa'] ?? [],
+                $data['kelas_id'], $data['tanggal_seharusnya'], $siswaIds,
+                null,
+                [],
+                $data['jadwal_id'] ?? null,
             ),
+            filled($jadwalTujuanId)
+                ? JadwalPengganti::pesanKuotaTujuan($jadwalTujuanId, $data['tanggal_pengganti'], $siswaIds)
+                : null,
         ]);
 
         if ($pesan) {
