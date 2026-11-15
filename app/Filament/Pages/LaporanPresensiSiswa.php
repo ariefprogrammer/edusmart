@@ -2,17 +2,19 @@
 
 namespace App\Filament\Pages;
 
+use App\Exports\LaporanPresensiSiswaExport;
 use App\Models\Cabang;
 use App\Models\Kelas;
 use App\Models\PresensiSiswa;
+use App\Models\Siswa;
+use App\Services\PenjadwalanSiswa;
+use Carbon\Carbon;
+use Carbon\CarbonPeriod;
+use Filament\Actions\Action;
+use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Collection;
-use App\Models\Siswa;
-use Carbon\CarbonPeriod;
-use Filament\Notifications\Notification;
 use Livewire\Attributes\Locked;
-use App\Exports\LaporanPresensiSiswaExport;
-use Filament\Actions\Action;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class LaporanPresensiSiswa extends Page
@@ -31,6 +33,9 @@ class LaporanPresensiSiswa extends Page
 
     public string $statusSiswa = 'aktif';
     protected const STATUS_VALID = ['hadir', 'izin', 'sakit', 'alpa'];
+
+    protected const HURUF_STATUS = ['hadir' => 'H', 'izin' => 'I', 'sakit' => 'S', 'alpa' => 'A'];
+    protected const NAMA_STATUS = ['hadir' => 'Hadir', 'izin' => 'Izin', 'sakit' => 'Sakit', 'alpa' => 'Alpa'];
 
     #[Locked]
     public ?int $editSiswaId = null;
@@ -95,10 +100,32 @@ class LaporanPresensiSiswa extends Page
 
         $cabangId = $this->isSuperAdmin() ? $this->cabangId : auth()->user()->cabang->first()?->id;
 
+        // Super admin tanpa filter cabang melihat program dari semua cabang: sertakan nama cabang
+        $sertakanCabang = $this->isSuperAdmin() && ! $this->cabangId;
+
         return Kelas::query()
+            ->with('cabang')
             ->when($cabangId, fn ($q) => $q->where('cabang_id', $cabangId))
             ->orderBy('nama_kelas')
-            ->pluck('nama_kelas', 'id');
+            ->get()
+            ->mapWithKeys(fn (Kelas $kelas) => [
+                $kelas->id => $sertakanCabang
+                    ? $kelas->nama_kelas . ' — ' . ($kelas->cabang?->nama_cabang ?? '-')
+                    : $kelas->nama_kelas,
+            ]);
+    }
+
+    /**
+     * Program yang dipilih, setelah divalidasi: harus termasuk pilihan yang boleh dilihat user ini.
+     * Rekap hanya boleh untuk satu program, jadi tanpa program yang valid tidak ada data.
+     */
+    public function kelasTerpilih(): ?int
+    {
+        if (! $this->kelasId) {
+            return null;
+        }
+
+        return $this->getKelasOptions()->has($this->kelasId) ? $this->kelasId : null;
     }
 
     public function bisaUbah(): bool
@@ -116,14 +143,21 @@ class LaporanPresensiSiswa extends Page
         abort_unless($this->bisaUbah(), 403);
         abort_unless(preg_match('/^\d{4}-\d{2}-\d{2}$/', $tanggal) === 1, 422);
 
-        // Isinya sama dengan yang dihitung di sel tabel (termasuk filter program)
+        $kelasId = $this->kelasTerpilih();
+
+        if (! $kelasId) {
+            Notification::make()->warning()->title('Pilih Kelas / Program terlebih dahulu')->send();
+            return;
+        }
+
+        // Semua sesi hari itu untuk siswa ini di program yang dipilih (satu baris per sesi)
         $records = PresensiSiswa::query()
+            ->with('jadwal.guru')
             ->where('siswa_id', $siswaId)
             ->whereDate('tanggal', $tanggal)
             ->whereIn('cabang_id', $this->cabangIdsUser())
-            ->whereNotNull('kelas_id')
+            ->where('kelas_id', $kelasId)
             ->whereIn('status', self::STATUS_VALID)
-            ->when($this->kelasId, fn ($q) => $q->where('kelas_id', $this->kelasId))
             ->orderBy('id')
             ->get();
 
@@ -132,14 +166,14 @@ class LaporanPresensiSiswa extends Page
             return;
         }
 
-        $namaKelas = Kelas::whereIn('id', $records->pluck('kelas_id'))->pluck('nama_kelas', 'id');
-
         $this->editSiswaId = $siswaId;
         $this->editTanggal = $tanggal;
         $this->editNamaSiswa = Siswa::find($siswaId)?->nama ?? '-';
-        $this->editRows = $records->mapWithKeys(fn ($r) => [
+        $this->editRows = $records->mapWithKeys(fn (PresensiSiswa $r) => [
             $r->id => [
-                'kelas' => $namaKelas[$r->kelas_id] ?? '-',
+                'label' => $r->jadwal
+                    ? PenjadwalanSiswa::labelJam($r->jadwal) . ' · Guru ' . ($r->jadwal->guru?->nama ?? '-')
+                    : 'Sesi tanpa jadwal (data lama)',
                 'status' => $r->status,
                 'keterangan' => $r->keterangan,
             ],
@@ -200,54 +234,114 @@ class LaporanPresensiSiswa extends Page
             ->all();
     }
 
+    /**
+     * Kode kehadiran satu siswa dalam satu hari dari daftar status tiap sesi.
+     *
+     * Status sama: huruf + akhiran jumlah sesi (H, HD = 2x, HT = 3x, 4x atau lebih = angka, mis. H4).
+     * Status berbeda: tiap bagian ditulis dengan aturan yang sama dan digabung dengan "/"
+     * dalam urutan tetap H, I, S, A (mis. H/A, HD/A).
+     */
+    protected static function kodePresensi(iterable $statuses): ?array
+    {
+        $hitung = collect($statuses)->countBy();
+
+        $bagian = [];
+        $ringkas = [];
+        $statusAda = [];
+        $jumlah = 0;
+
+        foreach (self::HURUF_STATUS as $status => $huruf) {
+            $n = (int) $hitung->get($status, 0);
+
+            if ($n === 0) {
+                continue;
+            }
+
+            $akhiran = match (true) {
+                $n === 1 => '',
+                $n === 2 => 'D',
+                $n === 3 => 'T',
+                default => (string) $n,
+            };
+
+            $bagian[] = $huruf . $akhiran;
+            $ringkas[] = self::NAMA_STATUS[$status] . " {$n}x";
+            $statusAda[] = $status;
+            $jumlah += $n;
+        }
+
+        if ($bagian === []) {
+            return null;
+        }
+
+        return [
+            'kode' => implode('/', $bagian),
+            // Satu jenis status memakai warna statusnya; campuran memakai warna netral
+            'warna' => count($statusAda) === 1 ? $statusAda[0] : 'campuran',
+            // Status pertama, untuk pemakai lama yang hanya mengenal satu status per hari (export Excel)
+            'status' => $statusAda[0],
+            'jumlah' => $jumlah,
+            'ringkas' => $jumlah . ' sesi: ' . implode(', ', $ringkas),
+        ];
+    }
+
     public function getRekap(): Collection
     {
+        $kelasId = $this->kelasTerpilih();
+
+        // Rekap hanya untuk satu program: tanpa program yang dipilih tidak ada data
+        if (! $kelasId) {
+            return collect();
+        }
+
         $cabangIds = $this->isSuperAdmin()
             ? ($this->cabangId ? [$this->cabangId] : null)
             : auth()->user()->cabang->pluck('id')->all();
 
-        $kelasIdsGuru = null;
-
-        if ($this->isGuru()) {
-            $guruId = auth()->user()->guru?->id;
-            $kelasIdsGuru = Kelas::whereHas('jadwal', fn ($q) => $q->where('guru_id', $guruId))->pluck('id')->all();
-        }
-
-        $siswaQuery = Siswa::query()
+        $siswaList = Siswa::query()
             ->when($cabangIds, fn ($q, $ids) => $q->whereIn('cabang_id', $ids))
-            ->when($kelasIdsGuru !== null, fn ($q) => $q->whereHas('kelasList', fn ($q2) => $q2->whereIn('kelas.id', $kelasIdsGuru)))
-            ->when($this->kelasId, fn ($q) => $q->whereHas('kelasList', fn ($q2) => $q2->where('kelas.id', $this->kelasId)))
+            ->whereHas('kelasList', fn ($q) => $q->where('kelas.id', $kelasId))
             ->when($this->statusSiswa === 'aktif', fn ($q) => $q->where('is_active', true))
-            ->when($this->statusSiswa === 'tidak_aktif', fn ($q) => $q->where('is_active', false));
-
-        $siswaList = $siswaQuery->orderBy('nama')->get();
+            ->when($this->statusSiswa === 'tidak_aktif', fn ($q) => $q->where('is_active', false))
+            ->orderBy('nama')
+            ->get();
 
         $presensiPerSiswa = PresensiSiswa::query()
             ->whereBetween('tanggal', [$this->dateStart, $this->dateEnd])
             ->whereIn('siswa_id', $siswaList->pluck('id'))
             ->when($cabangIds, fn ($q, $ids) => $q->whereIn('cabang_id', $ids))
-            ->when($this->kelasId, fn ($q) => $q->where('kelas_id', $this->kelasId))
-            ->when($this->kelasId === null && $kelasIdsGuru !== null, fn ($q) => $q->whereIn('kelas_id', $kelasIdsGuru))
-            ->when($this->kelasId === null && $kelasIdsGuru === null, fn ($q) => $q->whereNotNull('kelas_id'))
+            ->where('kelas_id', $kelasId)
+            ->whereIn('status', self::STATUS_VALID)
             ->get()
             ->groupBy('siswa_id');
 
-        return $siswaList->map(function ($siswa) use ($presensiPerSiswa) {
-            $records = $presensiPerSiswa->get($siswa->id, collect())
-                ->keyBy(fn ($r) => \Carbon\Carbon::parse($r->tanggal)->toDateString());
+        $tanggalList = $this->getDateRange();
 
+        return $siswaList->map(function ($siswa) use ($presensiPerSiswa, $tanggalList) {
+            // Satu baris per sesi: satu siswa bisa punya beberapa baris di hari yang sama
+            $semua = $presensiPerSiswa->get($siswa->id, collect());
+
+            $perTanggal = $semua->groupBy(fn ($r) => Carbon::parse($r->tanggal)->toDateString());
+
+            $kode = [];
             $harian = [];
-            foreach ($this->getDateRange() as $tanggal) {
-                $harian[$tanggal] = $records->get($tanggal)?->status;
+
+            foreach ($tanggalList as $tanggal) {
+                $info = self::kodePresensi($perTanggal->get($tanggal, collect())->pluck('status'));
+
+                $kode[$tanggal] = $info;
+                $harian[$tanggal] = $info['status'] ?? null;
             }
 
             return (object) [
                 'siswa' => $siswa,
+                'kode' => $kode,
                 'harian' => $harian,
-                'hadir' => $records->where('status', 'hadir')->count(),
-                'izin' => $records->where('status', 'izin')->count(),
-                'sakit' => $records->where('status', 'sakit')->count(),
-                'alpa' => $records->where('status', 'alpa')->count(),
+                // Rekap menghitung sesi, bukan hari: HD dihitung 2, HT dihitung 3
+                'hadir' => $semua->where('status', 'hadir')->count(),
+                'izin' => $semua->where('status', 'izin')->count(),
+                'sakit' => $semua->where('status', 'sakit')->count(),
+                'alpa' => $semua->where('status', 'alpa')->count(),
             ];
         })->values();
     }
@@ -262,6 +356,11 @@ class LaporanPresensiSiswa extends Page
                     'style' => 'background-color: #2563eb; color: #ffffff; border-color: #2563eb;',
                 ])
                 ->action(function () {
+                    if (! $this->kelasTerpilih()) {
+                        Notification::make()->warning()->title('Pilih Kelas / Program terlebih dahulu')->send();
+                        return;
+                    }
+
                     $rekap = $this->getRekap();
 
                     if ($rekap->isEmpty()) {
@@ -291,12 +390,10 @@ class LaporanPresensiSiswa extends Page
             ->pluck('nama_cabang', 'id');
 
         return [
-            'periode' => \Carbon\Carbon::parse($this->dateStart)->translatedFormat('d F Y')
-                . ' s/d ' . \Carbon\Carbon::parse($this->dateEnd)->translatedFormat('d F Y'),
+            'periode' => Carbon::parse($this->dateStart)->translatedFormat('d F Y')
+                . ' s/d ' . Carbon::parse($this->dateEnd)->translatedFormat('d F Y'),
             'cabang' => $cabangIds === null ? 'Semua Cabang' : $namaCabang->implode(', '),
-            'program' => $this->kelasId
-                ? (Kelas::find($this->kelasId)?->nama_kelas ?? '-')
-                : 'Semua Program',
+            'program' => Kelas::find($this->kelasTerpilih())?->nama_kelas ?? '-',
             'namaCabang' => $namaCabang->all(),
         ];
     }

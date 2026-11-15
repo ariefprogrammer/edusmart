@@ -8,7 +8,23 @@
         .presensi-badge-edit:hover {
             box-shadow: 0 0 0 2px rgb(var(--primary-500));
         }
+        .presensi-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+
+            min-width: 1.5rem;
+            height: 1.5rem;
+            padding: 0 .4rem;
+
+            border-radius: 999px;
+
+            font-size: .75rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
     </style>
+
     <div class="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mb-4">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
@@ -40,10 +56,12 @@
             @endif
 
             <div>
-                <label class="text-xs text-gray-500 mb-1 block">Kelas / Program</label>
+                <label class="text-xs text-gray-500 mb-1 block">
+                    Kelas / Program <span style="color:#dc2626;">*</span>
+                </label>
                 <x-filament::input.wrapper>
                     <select wire:model.live="kelasId" class="fi-select-input block w-full border-none bg-transparent py-1.5 text-sm">
-                        <option value="">Semua Program</option>
+                        <option value="">Pilih Kelas / Program</option>
                         @foreach($this->getKelasOptions() as $id => $nama)
                             <option value="{{ $id }}">{{ $nama }}</option>
                         @endforeach
@@ -66,20 +84,41 @@
 
     <div class="bg-white dark:bg-gray-800 rounded-xl shadow p-4">
         @php
+            $kelasTerpilih = $this->kelasTerpilih();
             $rekap = $this->getRekap();
             $tanggalList = $this->getDateRange();
             $bisaUbah = $this->bisaUbah();
-            $badgeStyle = [
-                'hadir' => ['H', '#dbeafe', '#1d4ed8'],
-                'izin' => ['I', '#fef9c3', '#a16207'],
-                'sakit' => ['S', '#dcfce7', '#15803d'],
-                'alpa' => ['A', '#fee2e2', '#b91c1c'],
+
+            // [warna latar, warna teks]; "campuran" = status berbeda dalam satu hari
+            $warnaBadge = [
+                'hadir' => ['#dbeafe', '#1d4ed8'],
+                'izin' => ['#fef9c3', '#a16207'],
+                'sakit' => ['#dcfce7', '#15803d'],
+                'alpa' => ['#fee2e2', '#b91c1c'],
+                'campuran' => ['#ede9fe', '#6d28d9'],
             ];
         @endphp
 
-        @if($rekap->isEmpty())
+        @if(! $kelasTerpilih)
+            <p class="text-sm text-gray-500">
+                Pilih Kelas / Program terlebih dahulu untuk menampilkan rekap presensi.
+                Rekap hanya dapat ditampilkan untuk satu program.
+            </p>
+        @elseif($rekap->isEmpty())
             <p class="text-sm text-gray-500">Tidak ada data siswa pada filter yang dipilih.</p>
         @else
+            <div class="mb-3 text-xs text-gray-500" style="line-height:1.6;">
+                <span><strong>H</strong> Hadir</span> ·
+                <span><strong>I</strong> Izin</span> ·
+                <span><strong>S</strong> Sakit</span> ·
+                <span><strong>A</strong> Alpa</span>
+                <br>
+                Lebih dari satu sesi dalam sehari: akhiran <strong>D</strong> = 2 sesi, <strong>T</strong> = 3 sesi,
+                angka = 4 sesi atau lebih (contoh: <strong>HD</strong> = hadir 2 sesi, <strong>H4</strong> = hadir 4 sesi).
+                Status berbeda dipisah garis miring (contoh: <strong>H/A</strong> = 1 hadir dan 1 alpa).
+                Kolom H, I, S, A di kanan menghitung jumlah sesi, bukan jumlah hari.
+            </div>
+
             <div class="overflow-x-auto">
                 <table class="w-full text-sm border-collapse">
                     <thead>
@@ -104,21 +143,25 @@
                                 <td class="py-2 px-2 font-medium whitespace-nowrap">{{ $row->siswa->nama }}</td>
 
                                 @foreach($tanggalList as $tanggal)
-                                    @php $status = $row->harian[$tanggal] ?? null; @endphp
+                                    @php $sel = $row->kode[$tanggal] ?? null; @endphp
                                     <td class="py-1 px-1 text-center">
-                                        @if($status && isset($badgeStyle[$status]))
-                                            @php $b = $badgeStyle[$status]; @endphp
+                                        @if($sel)
+                                            @php $w = $warnaBadge[$sel['warna']] ?? $warnaBadge['campuran']; @endphp
 
                                             @if($bisaUbah)
                                                 <button
                                                     type="button"
                                                     wire:click="bukaUbah({{ $row->siswa->id }}, '{{ $tanggal }}')"
-                                                    title="Klik untuk mengubah kehadiran"
-                                                    class="presensi-badge-edit inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-semibold"
-                                                    style="background-color:{{ $b[1] }};color:{{ $b[2] }};"
-                                                >{{ $b[0] }}</button>
+                                                    title="{{ $sel['ringkas'] }} — klik untuk mengubah kehadiran"
+                                                    class="presensi-badge presensi-badge-edit"
+                                                    style="background-color:{{ $w[0] }};color:{{ $w[1] }};"
+                                                >{{ $sel['kode'] }}</button>
                                             @else
-                                                <span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-semibold" style="background-color:{{ $b[1] }};color:{{ $b[2] }};">{{ $b[0] }}</span>
+                                                <span
+                                                    title="{{ $sel['ringkas'] }}"
+                                                    class="presensi-badge"
+                                                    style="background-color:{{ $w[0] }};color:{{ $w[1] }};"
+                                                >{{ $sel['kode'] }}</span>
                                             @endif
                                         @else
                                             <span class="text-gray-300 dark:text-gray-600">-</span>
@@ -151,7 +194,7 @@
         <form wire:submit.prevent="simpanUbah" class="space-y-4">
             @foreach($editRows as $recordId => $row)
                 <div wire:key="ubah-row-{{ $recordId }}">
-                    <p class="text-sm font-medium mb-1">{{ $row['kelas'] }}</p>
+                    <p class="text-sm font-medium mb-1">{{ $row['label'] }}</p>
 
                     <x-filament::input.wrapper>
                         <select wire:model="editRows.{{ $recordId }}.status" class="fi-select-input block w-full border-none bg-transparent py-1.5 text-sm">
