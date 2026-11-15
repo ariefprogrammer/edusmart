@@ -9,7 +9,7 @@ class ProgressSiswa extends Model
 {
     protected $table = 'progress_siswa';
 
-    protected $fillable = ['cabang_id', 'kelas_id', 'siswa_id', 'guru_id', 'tanggal', 'periode_id', 'catatan', 'keterangan_pengganti'];
+    protected $fillable = ['cabang_id', 'kelas_id', 'jadwal_id', 'siswa_id', 'guru_id', 'tanggal', 'periode_id', 'catatan', 'keterangan_pengganti'];
 
     protected $casts = ['tanggal' => 'date'];
 
@@ -36,5 +36,10 @@ class ProgressSiswa extends Model
     public function periode(): BelongsTo
     {
         return $this->belongsTo(Periode::class);
+    }
+
+    public function jadwal(): BelongsTo
+    {
+        return $this->belongsTo(Jadwal::class);
     }
 }

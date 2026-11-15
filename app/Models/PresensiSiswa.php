@@ -10,7 +10,7 @@ class PresensiSiswa extends Model
     protected $table = 'presensi_siswa';
 
     protected $fillable = [
-        'cabang_id', 'kelas_id', 'siswa_id', 'guru_id', 'tanggal', 'periode_id', 'status', 'keterangan', 'keterangan_pengganti',
+        'cabang_id', 'kelas_id', 'jadwal_id', 'siswa_id', 'guru_id', 'tanggal', 'periode_id', 'status', 'keterangan', 'keterangan_pengganti',
     ];
 
     protected $casts = [
@@ -40,5 +40,10 @@ class PresensiSiswa extends Model
     public function periode(): BelongsTo
     {
         return $this->belongsTo(Periode::class);
+    }
+
+    public function jadwal(): BelongsTo
+    {
+        return $this->belongsTo(Jadwal::class);
     }
 }

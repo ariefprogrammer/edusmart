@@ -16,6 +16,43 @@
         @endif
     </div>
 
+    @php $jadwalTerpilih = $this->getJadwalTerpilih(); @endphp
+
+    @if(in_array($activeTab, ['presensi', 'progress']))
+        @if($isGuruPengampu)
+            <div class="flex items-center justify-between gap-3 flex-wrap rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3">
+                <div class="flex items-center gap-2 text-sm">
+                    <x-filament::icon icon="heroicon-m-clock" class="w-4 h-4 text-primary-600" />
+                    <span class="text-gray-500">Jadwal:</span>
+                    <span class="font-semibold">
+                        {{ $jadwalTerpilih ? \App\Services\PenjadwalanSiswa::labelJam($jadwalTerpilih) : '-' }}
+                    </span>
+                </div>
+
+                <a href="{{ \App\Filament\Pages\ProgramSaya::getUrl() }}"
+                class="text-xs font-medium text-primary-600 hover:underline">
+                    Ganti jadwal
+                </a>
+            </div>
+        @else
+            <div class="max-w-md">
+                <label class="mb-1 block text-xs text-gray-500">Jadwal</label>
+                <x-filament::input.wrapper>
+                    <select wire:model.live="jadwalId" class="fi-select-input block w-full border-none bg-transparent py-1.5 text-sm">
+                        <option value="">Pilih Jadwal</option>
+                        @foreach($this->getJadwalOptions() as $guru => $daftar)
+                            <optgroup label="{{ $guru }}">
+                                @foreach($daftar as $id => $label)
+                                    <option value="{{ $id }}">{{ $label }}</option>
+                                @endforeach
+                            </optgroup>
+                        @endforeach
+                    </select>
+                </x-filament::input.wrapper>
+            </div>
+        @endif
+    @endif
+
     <div class="flex gap-4 border-b border-gray-200 dark:border-gray-700">
         <button type="button" wire:click="$set('activeTab', 'presensi')"
             class="pb-2 px-1 text-sm font-medium border-b-2 {{ $activeTab === 'presensi' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500' }}">
@@ -78,8 +115,10 @@
                 </div>
             </div>
 
-            @if($siswaList->isEmpty())
-                <p class="text-sm text-gray-500">Tidak ada siswa untuk ditampilkan.</p>
+            @if(! $jadwalTerpilih)
+                <p class="text-sm text-gray-500">Pilih jadwal terlebih dahulu untuk melihat dan mengisi data.</p>
+            @elseif($siswaList->isEmpty())
+                <p class="text-sm text-gray-500">Belum ada siswa yang di-assign ke jadwal ini.</p>
             @else
                 <div class="overflow-x-auto">
                     <table class="w-full text-sm border-collapse">
@@ -187,8 +226,10 @@
                 </div>
             </div>
 
-            @if($siswaList->isEmpty())
-                <p class="text-sm text-gray-500">Tidak ada siswa untuk ditampilkan.</p>
+            @if(! $jadwalTerpilih)
+                <p class="text-sm text-gray-500">Pilih jadwal terlebih dahulu untuk melihat dan mengisi data.</p>
+            @elseif($siswaList->isEmpty())
+                <p class="text-sm text-gray-500">Belum ada siswa yang di-assign ke jadwal ini.</p>
             @else
                 <div class="overflow-x-auto">
                     <table class="w-full text-sm border-collapse">

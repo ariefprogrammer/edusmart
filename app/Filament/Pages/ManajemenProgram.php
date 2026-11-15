@@ -15,6 +15,8 @@ use Filament\Pages\Page;
 use Livewire\WithFileUploads;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Locked;
+use App\Models\Jadwal;
+use App\Services\PenjadwalanSiswa;
 
 class ManajemenProgram extends Page
 {
@@ -27,6 +29,12 @@ class ManajemenProgram extends Page
     public Kelas $kelas;
     public string $activeTab = 'presensi';
     public string $tanggal;
+
+    // Jadwal (sesi jam belajar) yang sedang dibuka. Divalidasi ulang di setiap pemakaian,
+    // karena properti publik Livewire bisa diubah dari browser.
+    public ?int $jadwalId = null;
+    protected ?Collection $siswaJadwalCache = null;
+    protected ?Jadwal $jadwalCache = null;
 
     #[Locked]
     public bool $isGuruPengampu = false;
@@ -72,6 +80,20 @@ class ManajemenProgram extends Page
         $this->kelas = $kelas->load('cabang');
         $this->tanggal = today()->toDateString();
         $this->activeTab = 'presensi';
+        $this->jadwalId = (int) request()->query('jadwal') ?: null;
+
+        // Guru wajib masuk lewat salah satu jadwalnya sendiri
+        if ($isGuruPengampu && ! $this->jadwalDipilih()) {
+            Notification::make()
+                ->warning()
+                ->title('Pilih jadwal terlebih dahulu')
+                ->body('Masuk ke program lewat tombol Masuk di halaman Program Saya, lalu pilih jadwalnya.')
+                ->send();
+
+            $this->redirect(ProgramSaya::getUrl());
+
+            return;
+        }
 
         $this->periodeId = $this->cariPeriodeUntukTanggal($this->tanggal, 'bulan');
         $this->periodeNilaiId = $this->periodeId;
@@ -80,6 +102,16 @@ class ManajemenProgram extends Page
         $this->loadPresensi();
         $this->loadProgress();
         $this->loadNilai();
+    }
+
+    /** Dipakai admin saat memilih jadwal lewat dropdown. */
+    public function updatedJadwalId(): void
+    {
+        $this->jadwalCache = null;
+        $this->siswaJadwalCache = null;
+
+        $this->loadPresensi();
+        $this->loadProgress();
     }
 
     public function updatedTanggal(): void
@@ -146,12 +178,80 @@ class ManajemenProgram extends Page
     }
 
     /**
-     * Daftar siswa yang ditampilkan di tabel — default hanya yang is_active,
-     * kecuali toggle "tampilkan semua" dinyalakan.
+     * Jadwal yang dibuka, setelah divalidasi: harus jadwal aktif di program ini,
+     * dan untuk guru pengampu harus milik guru itu sendiri.
      */
+    protected function jadwalDipilih(): ?Jadwal
+    {
+        if (! $this->jadwalId) {
+            return null;
+        }
+
+        if ($this->jadwalCache?->getKey() === $this->jadwalId) {
+            return $this->jadwalCache;
+        }
+
+        $guruId = $this->isGuruPengampu ? auth()->user()->guru?->id : null;
+
+        return $this->jadwalCache = Jadwal::query()
+            ->with('guru')
+            ->where('kelas_id', $this->kelas->id)
+            ->where('is_active', true)
+            ->when($this->isGuruPengampu, fn ($q) => $q->where('guru_id', $guruId))
+            ->find($this->jadwalId);
+    }
+
+    public function getJadwalTerpilih(): ?Jadwal
+    {
+        return $this->jadwalDipilih();
+    }
+
+    /** Pilihan jadwal untuk dropdown admin, dikelompokkan per guru. */
+    public function getJadwalOptions(): array
+    {
+        $hari = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+
+        return Jadwal::query()
+            ->with('guru')
+            ->where('kelas_id', $this->kelas->id)
+            ->where('is_active', true)
+            ->get()
+            ->sortBy(fn (Jadwal $j) => [$j->guru?->nama, array_search($j->hari, $hari), $j->jam_mulai])
+            ->groupBy(fn (Jadwal $j) => 'Guru ' . ($j->guru?->nama ?? '-'))
+            ->map(fn (Collection $g) => $g->mapWithKeys(fn (Jadwal $j) => [$j->id => PenjadwalanSiswa::labelJam($j)])->all())
+            ->all();
+    }
+
+    /** Siswa yang di-assign ke jadwal yang sedang dibuka (dipakai tab Presensi dan Progress). */
+    protected function siswaJadwal(): Collection
+    {
+        if ($this->siswaJadwalCache !== null) {
+            return $this->siswaJadwalCache;
+        }
+
+        $jadwal = $this->jadwalDipilih();
+
+        if (! $jadwal) {
+            return $this->siswaJadwalCache = collect();
+        }
+
+        return $this->siswaJadwalCache = $this->kelas->siswa()
+            ->orderBy('siswa.nama')
+            ->whereIn('siswa.id', fn ($sub) => $sub
+                ->select('jadwal_siswa.siswa_id')
+                ->from('jadwal_siswa')
+                ->where('jadwal_siswa.jadwal_id', $jadwal->id))
+            ->get();
+    }
+
     public function getSiswaList()
     {
-        $siswa = $this->semuaSiswa()->unique('id');
+        // Presensi dan Progress per jadwal; Nilai per program (semua siswa guru ini)
+        $sumber = in_array($this->activeTab, ['presensi', 'progress'], true)
+            ? $this->siswaJadwal()
+            : $this->semuaSiswa();
+
+        $siswa = $sumber->unique('id');
 
         return $this->tampilkanSemuaSiswa
             ? $siswa->values()
@@ -159,12 +259,12 @@ class ManajemenProgram extends Page
     }
 
     /**
-     * Dipakai untuk menyaring proses simpan — siswa non-aktif tidak boleh
-     * diubah datanya sama sekali, apapun isi form yang terkirim.
+     * Dipakai untuk menyaring proses simpan — siswa non-aktif atau di luar $sumber
+     * tidak boleh diubah datanya sama sekali, apapun isi form yang terkirim.
      */
-    protected function siswaAktifIds(): array
+    protected function siswaAktifIds(Collection $sumber): array
     {
-        return $this->semuaSiswa()
+        return $sumber
             ->filter(fn ($s) => $s->is_active && $s->pivot->is_active)
             ->pluck('id')
             ->all();
@@ -176,17 +276,21 @@ class ManajemenProgram extends Page
     }
 
     // =========================================================
-    // PRESENSI SISWA (periode tipe: bulan)
+    // PRESENSI SISWA 
     // =========================================================
 
     public function loadPresensi(): void
     {
-        $existing = PresensiSiswa::where('kelas_id', $this->kelas->id)
-            ->whereDate('tanggal', $this->tanggal)
-            ->get()
-            ->keyBy('siswa_id');
+        $jadwal = $this->jadwalDipilih();
 
-        $this->presensiData = $this->semuaSiswa()->mapWithKeys(function ($siswa) use ($existing) {
+        $existing = $jadwal
+            ? PresensiSiswa::where('jadwal_id', $jadwal->id)
+                ->whereDate('tanggal', $this->tanggal)
+                ->get()
+                ->keyBy('siswa_id')
+            : collect();
+
+        $this->presensiData = $this->siswaJadwal()->mapWithKeys(function ($siswa) use ($existing) {
             $row = $existing->get($siswa->id);
 
             return [
@@ -201,6 +305,16 @@ class ManajemenProgram extends Page
     public function submitPresensi(): void
     {
         abort_unless($this->isGuruPengampu, 403);
+
+        $jadwal = $this->jadwalDipilih();
+
+        if (! $jadwal) {
+            Notification::make()->danger()
+                ->title('Jadwal tidak valid')
+                ->body('Kembali ke Program Saya dan pilih jadwal terlebih dahulu.')
+                ->send();
+            return;
+        }
 
         $hariIni = today()->toDateString();
 
@@ -224,7 +338,7 @@ class ManajemenProgram extends Page
         }
 
         $guruId = auth()->user()->guru?->id;
-        $aktifIds = $this->siswaAktifIds();
+        $aktifIds = $this->siswaAktifIds($this->siswaJadwal());
 
         foreach ($this->presensiData as $siswaId => $data) {
             if (! in_array($siswaId, $aktifIds)) {
@@ -233,12 +347,13 @@ class ManajemenProgram extends Page
 
             PresensiSiswa::updateOrCreate(
                 [
-                    'kelas_id' => $this->kelas->id,
+                    'jadwal_id' => $jadwal->id,
                     'siswa_id' => $siswaId,
                     'tanggal' => $hariIni,
                 ],
                 [
                     'cabang_id' => $this->kelas->cabang_id,
+                    'kelas_id' => $this->kelas->id,
                     'guru_id' => $guruId,
                     'periode_id' => $periodeHariIni,
                     'status' => $data['status'],
@@ -247,21 +362,24 @@ class ManajemenProgram extends Page
             );
         }
 
-        Notification::make()->success()->title('Presensi berhasil disimpan')->send();
+        Notification::make()->success()
+            ->title('Presensi berhasil disimpan')
+            ->body('Jadwal ' . PenjadwalanSiswa::labelJam($jadwal) . '.')
+            ->send();
     }
-
-    // =========================================================
-    // PROGRESS SISWA (periode tipe: bulan)
-    // =========================================================
 
     public function loadProgress(): void
     {
-        $existing = ProgressSiswa::where('kelas_id', $this->kelas->id)
-            ->whereDate('tanggal', $this->tanggal)
-            ->get()
-            ->keyBy('siswa_id');
+        $jadwal = $this->jadwalDipilih();
 
-        $this->progressData = $this->semuaSiswa()->mapWithKeys(function ($siswa) use ($existing) {
+        $existing = $jadwal
+            ? ProgressSiswa::where('jadwal_id', $jadwal->id)
+                ->whereDate('tanggal', $this->tanggal)
+                ->get()
+                ->keyBy('siswa_id')
+            : collect();
+
+        $this->progressData = $this->siswaJadwal()->mapWithKeys(function ($siswa) use ($existing) {
             return [$siswa->id => $existing->get($siswa->id)?->catatan ?? ''];
         })->toArray();
     }
@@ -269,6 +387,16 @@ class ManajemenProgram extends Page
     public function submitProgress(): void
     {
         abort_unless($this->isGuruPengampu, 403);
+
+        $jadwal = $this->jadwalDipilih();
+
+        if (! $jadwal) {
+            Notification::make()->danger()
+                ->title('Jadwal tidak valid')
+                ->body('Kembali ke Program Saya dan pilih jadwal terlebih dahulu.')
+                ->send();
+            return;
+        }
 
         $hariIni = today()->toDateString();
 
@@ -291,7 +419,7 @@ class ManajemenProgram extends Page
         }
 
         $guruId = auth()->user()->guru?->id;
-        $aktifIds = $this->siswaAktifIds();
+        $aktifIds = $this->siswaAktifIds($this->siswaJadwal());
 
         foreach ($this->progressData as $siswaId => $catatan) {
             if (! in_array($siswaId, $aktifIds)) {
@@ -300,12 +428,13 @@ class ManajemenProgram extends Page
 
             ProgressSiswa::updateOrCreate(
                 [
-                    'kelas_id' => $this->kelas->id,
+                    'jadwal_id' => $jadwal->id,
                     'siswa_id' => $siswaId,
                     'tanggal' => $hariIni,
                 ],
                 [
                     'cabang_id' => $this->kelas->cabang_id,
+                    'kelas_id' => $this->kelas->id,
                     'guru_id' => $guruId,
                     'periode_id' => $periodeHariIni,
                     'catatan' => $catatan,
@@ -313,7 +442,10 @@ class ManajemenProgram extends Page
             );
         }
 
-        Notification::make()->success()->title('Progress siswa berhasil disimpan')->send();
+        Notification::make()->success()
+            ->title('Progress siswa berhasil disimpan')
+            ->body('Jadwal ' . PenjadwalanSiswa::labelJam($jadwal) . '.')
+            ->send();
     }
 
     // =========================================================
@@ -391,7 +523,7 @@ class ManajemenProgram extends Page
         }
 
         $guruId = auth()->user()->guru?->id;
-        $aktifIds = $this->siswaAktifIds();
+        $aktifIds = $this->siswaAktifIds($this->semuaSiswa());
 
         foreach ($this->nilaiData as $siswaId => $kategoriValues) {
             if (! in_array($siswaId, $aktifIds)) {
