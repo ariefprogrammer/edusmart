@@ -208,7 +208,7 @@
 
         .program-actions {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr;
 
             gap: .6rem;
 
@@ -489,6 +489,63 @@
             font-size: .8rem;
 
             color: rgb(var(--gray-500));
+        }
+
+        /* =========================================================
+        * PILIH JADWAL (MODAL)
+        * ========================================================= */
+
+        .schedule-modal-hint {
+            margin-bottom: .85rem;
+
+            font-size: .75rem;
+
+            color: rgb(var(--gray-500));
+        }
+
+        .schedule-item--link {
+            text-decoration: none;
+            cursor: pointer;
+
+            transition:
+                border-color .2s ease,
+                background .2s ease,
+                transform .15s ease;
+        }
+
+        .schedule-item--link:hover {
+            border-color: rgb(var(--primary-400));
+            background: rgb(var(--primary-50));
+        }
+
+        .dark .schedule-item--link:hover {
+            border-color: rgb(var(--primary-600));
+            background: rgba(var(--primary-500), .12);
+        }
+
+        .schedule-item--link:active {
+            transform: scale(.99);
+        }
+
+        .schedule-item--locked {
+            opacity: .65;
+            cursor: not-allowed;
+        }
+
+        .schedule-item-meta {
+            margin-top: .15rem;
+
+            font-size: .68rem;
+
+            color: rgb(var(--gray-500));
+        }
+
+        .schedule-item-arrow {
+            margin-left: auto;
+
+            flex-shrink: 0;
+
+            color: rgb(var(--gray-400));
         }
 
 
@@ -897,8 +954,8 @@
 
 
         {{-- =====================================================
-         * PROGRAM
-         * ===================================================== --}}
+        * PROGRAM
+        * ===================================================== --}}
         @if($programs->isNotEmpty())
 
             <div class="program-grid">
@@ -906,27 +963,18 @@
                 @foreach($programs as $kelas)
 
                     @php
-                        $statusKuota = $kelas->statusKuota();
-
-                        $kuotaKurang = $statusKuota === 'kurang';
-                        $kuotaLebih = $statusKuota === 'lebih';
+                        $jamKurang = $kelas->jadwal->where('kuota_kurang', true)->count();
                     @endphp
 
-
-                    {{-- =================================================
-                     * CARD
-                     * ================================================= --}}
                     <div
                         x-data="{ scheduleOpen: false }"
                         class="program-card"
-                        @if($kuotaKurang)
+                        @if($jamKurang > 0)
                             style="border-color: rgba(var(--danger-500), .35);"
                         @endif
                     >
 
-                        {{-- =================================================
-                         * GAMBAR PROGRAM
-                         * ================================================= --}}
+                        {{-- GAMBAR PROGRAM --}}
                         <div class="program-image">
 
                             <x-kelas-icon
@@ -934,9 +982,7 @@
                                 :ukuran="6"
                             />
 
-
-                            {{-- BADGE HANYA JIKA KUOTA KURANG --}}
-                            @if($kuotaKurang)
+                            @if($jamKurang > 0)
 
                                 <div class="quota-warning-badge">
 
@@ -945,7 +991,7 @@
                                         class="w-3.5 h-3.5"
                                     />
 
-                                    Kuota kurang
+                                    {{ $jamKurang }} jam kuota kurang
 
                                 </div>
 
@@ -954,21 +1000,18 @@
                         </div>
 
 
-                        {{-- =================================================
-                         * CONTENT
-                         * ================================================= --}}
+                        {{-- CONTENT --}}
                         <div class="program-content">
 
-                            {{-- NAMA PROGRAM --}}
                             <h3 class="program-name">
                                 {{ $kelas->nama_kelas }}
                             </h3>
 
-
-                            {{-- INFORMASI KUOTA --}}
                             <div class="program-quota">
 
                                 {{ $kelas->siswa_aktif_count }} siswa aktif
+                                ·
+                                {{ $kelas->jadwal->count() }} jadwal
 
                                 @if($kelas->kuota_minimal > 0 || $kelas->kuota_maksimal !== null)
 
@@ -988,6 +1031,8 @@
                                             Maks. {{ $kelas->kuota_maksimal }}
                                         @endif
 
+                                        per jam
+
                                     </strong>
 
                                 @endif
@@ -995,74 +1040,31 @@
                             </div>
 
 
-                            {{-- =================================================
-                             * BUTTON
-                             * ================================================= --}}
+                            {{-- MASUK: membuka daftar jadwal, guru wajib memilih salah satu --}}
                             <div class="program-actions">
 
-                                {{-- JADWAL --}}
                                 <button
                                     type="button"
-                                    class="program-action program-action--schedule"
+                                    class="program-action program-action--enter"
 
                                     x-on:click="scheduleOpen = true"
                                 >
 
                                     <x-filament::icon
-                                        icon="heroicon-m-calendar-days"
+                                        icon="heroicon-m-arrow-right"
                                         class="w-4 h-4"
                                     />
 
-                                    Jadwal
+                                    Masuk
 
                                 </button>
-
-
-                                {{-- MASUK --}}
-                                @if($kuotaKurang)
-
-                                    <button
-                                        type="button"
-                                        class="program-action program-action--disabled"
-                                        disabled
-                                        title="Program belum dapat dibuka karena kuota belum terpenuhi."
-                                    >
-
-                                        <x-filament::icon
-                                            icon="heroicon-m-lock-closed"
-                                            class="w-4 h-4"
-                                        />
-
-                                        Masuk
-
-                                    </button>
-
-                                @else
-
-                                    <a
-                                        href="{{ \App\Filament\Pages\ManajemenProgram::getUrl(['kelas' => $kelas->id]) }}"
-                                        class="program-action program-action--enter"
-                                    >
-
-                                        <x-filament::icon
-                                            icon="heroicon-m-arrow-right"
-                                            class="w-4 h-4"
-                                        />
-
-                                        Masuk
-
-                                    </a>
-
-                                @endif
 
                             </div>
 
                         </div>
 
 
-                        {{-- =================================================
-                         * MODAL JADWAL
-                         * ================================================= --}}
+                        {{-- MODAL PILIH JADWAL --}}
                         <template x-teleport="body">
 
                             <div
@@ -1090,7 +1092,7 @@
                                         <div>
 
                                             <div class="schedule-modal-title">
-                                                Jadwal Program
+                                                Pilih Jadwal
                                             </div>
 
                                             <div class="text-xs text-gray-500 mt-0.5">
@@ -1123,41 +1125,101 @@
 
                                         @if($kelas->jadwal->isNotEmpty())
 
+                                            <p class="schedule-modal-hint">
+                                                Pilih salah satu jadwal untuk masuk ke program ini.
+                                            </p>
+
                                             <div class="schedule-list">
 
                                                 @foreach($kelas->jadwal as $j)
 
-                                                    <div class="schedule-item">
+                                                    @if($j->kuota_kurang)
 
-                                                        <div class="schedule-item-icon">
+                                                        {{-- Kuota minimal belum terpenuhi: tidak bisa dimasuki --}}
+                                                        <div
+                                                            class="schedule-item schedule-item--locked"
+                                                            title="Jadwal belum dapat dibuka karena kuota minimal belum terpenuhi."
+                                                        >
+
+                                                            <div class="schedule-item-icon">
+
+                                                                <x-filament::icon
+                                                                    icon="heroicon-m-lock-closed"
+                                                                    class="w-4 h-4"
+                                                                />
+
+                                                            </div>
+
+                                                            <div class="schedule-item-content">
+
+                                                                <div class="schedule-item-day">
+                                                                    {{ $j->hari }}
+                                                                </div>
+
+                                                                <div class="schedule-item-time">
+
+                                                                    {{ \Illuminate\Support\Carbon::parse($j->jam_mulai)->format('H:i') }}
+
+                                                                    –
+
+                                                                    {{ \Illuminate\Support\Carbon::parse($j->jam_selesai)->format('H:i') }}
+
+                                                                </div>
+
+                                                                <div class="schedule-item-meta">
+                                                                    {{ $j->siswa_aktif_count }} siswa · kuota minimal {{ $kelas->kuota_minimal }} belum terpenuhi
+                                                                </div>
+
+                                                            </div>
+
+                                                        </div>
+
+                                                    @else
+
+                                                        <a
+                                                            href="{{ \App\Filament\Pages\ManajemenProgram::getUrl(['kelas' => $kelas->id, 'jadwal' => $j->id]) }}"
+                                                            class="schedule-item schedule-item--link"
+                                                        >
+
+                                                            <div class="schedule-item-icon">
+
+                                                                <x-filament::icon
+                                                                    icon="heroicon-m-clock"
+                                                                    class="w-4 h-4"
+                                                                />
+
+                                                            </div>
+
+                                                            <div class="schedule-item-content">
+
+                                                                <div class="schedule-item-day">
+                                                                    {{ $j->hari }}
+                                                                </div>
+
+                                                                <div class="schedule-item-time">
+
+                                                                    {{ \Illuminate\Support\Carbon::parse($j->jam_mulai)->format('H:i') }}
+
+                                                                    –
+
+                                                                    {{ \Illuminate\Support\Carbon::parse($j->jam_selesai)->format('H:i') }}
+
+                                                                </div>
+
+                                                                <div class="schedule-item-meta">
+                                                                    {{ $j->siswa_aktif_count }} siswa
+                                                                </div>
+
+                                                            </div>
 
                                                             <x-filament::icon
-                                                                icon="heroicon-m-clock"
-                                                                class="w-4 h-4"
+                                                                icon="heroicon-m-chevron-right"
+                                                                class="schedule-item-arrow w-5 h-5"
                                                             />
 
-                                                        </div>
+                                                        </a>
 
-
-                                                        <div class="schedule-item-content">
-
-                                                            <div class="schedule-item-day">
-                                                                {{ $j->hari }}
-                                                            </div>
-
-                                                            <div class="schedule-item-time">
-
-                                                                {{ \Illuminate\Support\Carbon::parse($j->jam_mulai)->format('H:i') }}
-
-                                                                –
-
-                                                                {{ \Illuminate\Support\Carbon::parse($j->jam_selesai)->format('H:i') }}
-
-                                                            </div>
-
-                                                        </div>
-
-                                                    </div>
+                                                    @endif
 
                                                 @endforeach
 
@@ -1186,7 +1248,6 @@
             </div>
 
         @endif
-
 
 
         {{-- =====================================================
