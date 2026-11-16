@@ -165,16 +165,24 @@ class KelasResource extends Resource
                     ->visible(fn () => auth()->user()->hasRole('super_admin')),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\EditAction::make()
+                    ->iconButton()
+                    ->tooltip('Edit'),
+
                 Tables\Actions\Action::make('kelola')
                     ->label('Kelola Program')
                     ->icon('heroicon-o-arrow-top-right-on-square')
+                    ->iconButton()
+                    ->tooltip('Kelola Program')
                     ->url(fn (Kelas $record) => \App\Filament\Pages\ManajemenProgram::getUrl(['kelas' => $record->id]))
                     ->openUrlInNewTab(),
+
                 Tables\Actions\Action::make('exportJadwal')
                     ->label('Export Excel')
                     ->icon('heroicon-o-arrow-down-tray')
                     ->color('gray')
+                    ->iconButton()
+                    ->tooltip('Export Excel')
                     ->action(function (Kelas $record) {
                         if (! $record->jadwal()->where('is_active', true)->exists()) {
                             Notification::make()
