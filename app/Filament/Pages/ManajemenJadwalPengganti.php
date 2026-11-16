@@ -102,20 +102,35 @@ class ManajemenJadwalPengganti extends Page
             ->get();
     }
 
+    /**
+     * Baris sesi yang digantikan (jadwal yang digantikan pada tanggal seharusnya), dengan kunci id siswa.
+     * Baris lama yang dibuat sebelum ada jadwal_id (kosong) untuk program dan tanggal yang sama
+     * ikut dikenali, dan diberi jadwal_id saat disimpan.
+     */
+    protected function barisSesiDigantikan(string $model): Collection
+    {
+        $jadwalId = $this->jadwalPengganti->jadwal_id;
+
+        return $model::query()
+            ->where('kelas_id', $this->jadwalPengganti->kelas_id)
+            ->whereDate('tanggal', $this->jadwalPengganti->tanggal_seharusnya->toDateString())
+            ->where(fn ($q) => $q->where('jadwal_id', $jadwalId)->orWhereNull('jadwal_id'))
+            ->get()
+            ->groupBy('siswa_id')
+            // Baris dengan jadwal_id yang sesuai didahulukan daripada baris lama
+            ->map(fn (Collection $baris) => $baris->first(
+                fn ($b) => $b->jadwal_id !== null && (int) $b->jadwal_id === (int) $jadwalId
+            ) ?? $baris->first());
+    }
+
     protected function barisPresensi(): Collection
     {
-        return PresensiSiswa::where('kelas_id', $this->jadwalPengganti->kelas_id)
-            ->whereDate('tanggal', $this->jadwalPengganti->tanggal_seharusnya->toDateString())
-            ->get()
-            ->keyBy('siswa_id');
+        return $this->barisSesiDigantikan(PresensiSiswa::class);
     }
 
     protected function barisProgress(): Collection
     {
-        return ProgressSiswa::where('kelas_id', $this->jadwalPengganti->kelas_id)
-            ->whereDate('tanggal', $this->jadwalPengganti->tanggal_seharusnya->toDateString())
-            ->get()
-            ->keyBy('siswa_id');
+        return $this->barisSesiDigantikan(ProgressSiswa::class);
     }
 
     protected function periodeBulanTanggalSeharusnya(): ?int
@@ -192,25 +207,32 @@ class ManajemenJadwalPengganti extends Page
 
         $tanggal = $this->jadwalPengganti->tanggal_seharusnya->toDateString();
         $guruId = auth()->user()->guru?->id;
+        $jadwalId = $this->jadwalPengganti->jadwal_id;
 
-        DB::transaction(function () use ($siswaList, $existing, $periodeTanggal, $tanggal, $guruId) {
+        DB::transaction(function () use ($siswaList, $existing, $periodeTanggal, $tanggal, $guruId, $jadwalId) {
             foreach ($siswaList as $siswa) {
                 $data = $this->presensiData[$siswa->id];
+                $row = $existing->get($siswa->id);
 
-                PresensiSiswa::updateOrCreate(
-                    [
+                $nilai = [
+                    'jadwal_id' => $jadwalId,
+                    'cabang_id' => $this->jadwalPengganti->cabang_id,
+                    'guru_id' => $guruId,
+                    'periode_id' => $row?->periode_id ?? $periodeTanggal,
+                    'status' => $data['status'],
+                    'keterangan_pengganti' => JadwalPengganti::gabungKeterangan($data['keterangan'] ?? ''),
+                ];
+
+                if ($row) {
+                    // Memperbarui baris sesi yang digantikan; baris lama tanpa jadwal_id ikut diberi jadwal_id
+                    $row->update($nilai);
+                } else {
+                    PresensiSiswa::create($nilai + [
                         'kelas_id' => $this->jadwalPengganti->kelas_id,
                         'siswa_id' => $siswa->id,
                         'tanggal' => $tanggal,
-                    ],
-                    [
-                        'cabang_id' => $this->jadwalPengganti->cabang_id,
-                        'guru_id' => $guruId,
-                        'periode_id' => $existing->get($siswa->id)?->periode_id ?? $periodeTanggal,
-                        'status' => $data['status'],
-                        'keterangan_pengganti' => JadwalPengganti::gabungKeterangan($data['keterangan'] ?? ''),
-                    ],
-                );
+                    ]);
+                }
 
                 $this->jadwalPengganti->siswa()->updateExistingPivot($siswa->id, [
                     'presensi_disimpan_pada' => now(),
@@ -250,22 +272,30 @@ class ManajemenJadwalPengganti extends Page
 
         $tanggal = $this->jadwalPengganti->tanggal_seharusnya->toDateString();
         $guruId = auth()->user()->guru?->id;
+        $jadwalId = $this->jadwalPengganti->jadwal_id;
 
-        DB::transaction(function () use ($siswaList, $existing, $periodeTanggal, $tanggal, $guruId) {
+        DB::transaction(function () use ($siswaList, $existing, $periodeTanggal, $tanggal, $guruId, $jadwalId) {
             foreach ($siswaList as $siswa) {
-                ProgressSiswa::updateOrCreate(
-                    [
+                $row = $existing->get($siswa->id);
+
+                $nilai = [
+                    'jadwal_id' => $jadwalId,
+                    'cabang_id' => $this->jadwalPengganti->cabang_id,
+                    'guru_id' => $guruId,
+                    'periode_id' => $row?->periode_id ?? $periodeTanggal,
+                    'keterangan_pengganti' => JadwalPengganti::gabungKeterangan($this->progressData[$siswa->id] ?? ''),
+                ];
+
+                if ($row) {
+                    // Catatan progress reguler (kolom catatan) tidak disentuh
+                    $row->update($nilai);
+                } else {
+                    ProgressSiswa::create($nilai + [
                         'kelas_id' => $this->jadwalPengganti->kelas_id,
                         'siswa_id' => $siswa->id,
                         'tanggal' => $tanggal,
-                    ],
-                    [
-                        'cabang_id' => $this->jadwalPengganti->cabang_id,
-                        'guru_id' => $guruId,
-                        'periode_id' => $existing->get($siswa->id)?->periode_id ?? $periodeTanggal,
-                        'keterangan_pengganti' => JadwalPengganti::gabungKeterangan($this->progressData[$siswa->id] ?? ''),
-                    ],
-                );
+                    ]);
+                }
             }
         });
 
