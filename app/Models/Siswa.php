@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne; // 1. Tambah HasOne
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use App\Models\Concerns\HasUuid;
 use App\Models\KelasSiswa;
@@ -20,19 +21,28 @@ class Siswa extends Model
 
     public const STATUS_NONAKTIF = ['cuti', 'keluar'];
 
+    // 2. Daftarkan kolom-kolom baru ke $fillable
     protected $fillable = [
-        'uuid', 'cabang_id', 'wali_murid_id', 'nama', 'tanggal_lahir',
-        'alamat', 'telepon', 'status', 'tanggal_daftar', 'is_active',
+        'uuid', 'cabang_id', 'wali_murid_id', 'nama', 'nisn', 'jenis_kelamin',
+        'kelas', 'asal_sekolah', 'tempat_lahir', 'tanggal_lahir', 'agama',
+        'kewarganegaraan', 'alamat', 'rt', 'rw', 'kelurahan', 'kode_pos',
+        'alat_transportasi', 'sumber_informasi', 'anak_ke', 'media_sosial',
+        'telepon', 'telepon_rumah', 'status', 'tanggal_daftar', 'tanggal_masuk',
+        'is_active',
     ];
 
+    // 3. Tambahkan cast untuk kolom baru
     protected $casts = [
         'tanggal_lahir' => 'date',
         'tanggal_daftar' => 'date',
+        'tanggal_masuk' => 'date',
+        'anak_ke' => 'integer',
     ];
 
+    // 4. Daftarkan telepon_rumah ke trait FormatsIndonesianPhoneNumber
     protected function phoneNumberFields(): array
     {
-        return ['telepon'];
+        return ['telepon', 'telepon_rumah'];
     }
 
     public function cabang(): BelongsTo
@@ -43,6 +53,12 @@ class Siswa extends Model
     public function waliMurid(): BelongsTo
     {
         return $this->belongsTo(WaliMurid::class, 'wali_murid_id');
+    }
+
+    // 5. Relasi baru ke data Ayah, Ibu, dan Wali
+    public function keluarga(): HasOne
+    {
+        return $this->hasOne(SiswaKeluarga::class, 'siswa_id');
     }
 
     public function statusRiwayat(): HasMany
@@ -125,5 +141,4 @@ class Siswa extends Model
             return $pivots->count();
         });
     }
-
 }

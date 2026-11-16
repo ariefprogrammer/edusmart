@@ -2,28 +2,31 @@
 
 namespace App\Filament\Resources;
 
-use App\Models\Concerns\ScopedToCabang;
 use App\Filament\Resources\SiswaResource\Pages;
+use App\Models\Concerns\ScopedToCabang;
+use App\Models\Kelas;
 use App\Models\Siswa;
-use Filament\Forms;
+use App\Services\PenjadwalanSiswa;
+use Closure;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Fieldset;
+use Filament\Forms\Components\Grid;
+use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Tabs;
+use Filament\Forms\Components\Tabs\Tab;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
+use Filament\Forms\Set;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Database\Eloquent\Builder;
-use App\Models\Kelas;
-use Closure;
 use Illuminate\Database\Eloquent\Model;
-use Filament\Forms\Set;
-use App\Services\PenjadwalanSiswa;
+use Illuminate\Support\Facades\Hash;
 
 class SiswaResource extends Resource
 {
@@ -70,229 +73,406 @@ class SiswaResource extends Resource
         $ambilIdAktifSiswa = function (?Model $record) use (&$idAktifSiswa): array {
             return $idAktifSiswa ??= self::programAktifSiswa($record);
         };
-        
+
         return $form->schema([
-            Select::make('cabang_id')
-                ->relationship('cabang', 'nama_cabang')
-                ->searchable()
-                ->preload()
-                ->required()
-                ->live()
-                ->visible(fn () => auth()->user()->hasRole('super_admin'))
-                ->default(fn () => auth()->user()->cabang->first()?->id)
-                ->dehydrated(),
+            Tabs::make('Form Siswa')
+                ->columnSpanFull()
+                ->persistTabInQueryString()
+                ->tabs([
+                    // =================================================================
+                    // TAB 1: BIODATA SISWA
+                    // =================================================================
+                    Tab::make('Biodata Siswa')
+                        ->icon('heroicon-o-identification')
+                        ->schema([
+                            Section::make('Identitas Pribadi')
+                                ->columns(2)
+                                ->schema([
+                                    TextInput::make('nama')
+                                        ->label('Nama Lengkap Siswa')
+                                        ->required()
+                                        ->maxLength(255),
 
-            Select::make('kelasList')
-                ->label('Program yang Diikuti')
-                ->relationship(
-                    'kelasList',
-                    'nama_kelas',
-                    modifyQueryUsing: fn (Builder $query, Get $get) => $query
-                        ->where('cabang_id', $get('cabang_id') ?? auth()->user()->cabang->first()?->id),
-                )
-                ->multiple()
-                ->searchable()
-                ->preload()
-                ->live()
-                ->afterStateUpdated(function (Get $get, Set $set, ?Model $record) {
-                    $kelasIds = self::idInt($get('kelasList'));
+                                    TextInput::make('nisn')
+                                        ->label('NISN')
+                                        ->maxLength(20),
 
-                    $dipilih = collect(self::idInt($get('jadwal_ids')))
-                        ->intersect(PenjadwalanSiswa::idJadwalDi($kelasIds));
+                                    Select::make('jenis_kelamin')
+                                        ->label('Jenis Kelamin')
+                                        ->options([
+                                            'L' => 'Laki-laki',
+                                            'P' => 'Perempuan',
+                                        ]),
 
-                    if ($record?->exists) {
-                        $baru = array_diff($kelasIds, self::programAktifSiswa($record));
-                        $dipilih = $dipilih->merge(PenjadwalanSiswa::idTersimpan($record->getKey(), $baru));
-                    }
+                                    TextInput::make('anak_ke')
+                                        ->label('Anak Ke-')
+                                        ->numeric()
+                                        ->minValue(1),
 
-                    $set('jadwal_ids', $dipilih->unique()->values()->all());
-                })
-                // Wajib saat membuat siswa; saat edit hanya wajib jika siswa aktif
-                ->required(fn (Get $get, ?Model $record): bool => ! $record?->exists || ! self::siswaTidakAktifDiForm($get))
-                ->helperText(fn (Get $get, ?Model $record) => $record?->exists && self::siswaTidakAktifDiForm($get)
-                    ? 'Siswa tidak aktif/cuti/keluar: program yang masih aktif akan dinonaktifkan otomatis saat disimpan.'
-                    : null)
-                // Nilai awal di form edit: hanya program yang pivot-nya masih aktif
-                ->loadStateFromRelationshipsUsing(function (Select $component, ?Model $record) {
-                    $component->state(self::programAktifSiswa($record));
-                })
-                // Penyimpanan manual: riwayat lama tidak ditimpa, program yang dilepas dinonaktifkan
-                ->saveRelationshipsUsing(function (Model $record, $state) {
-                    $dipilih = collect($state ?? [])->map(fn ($id) => (int) $id);
-                    $relasi  = $record->kelasList();
+                                    TextInput::make('tempat_lahir')
+                                        ->label('Tempat Lahir')
+                                        ->maxLength(100),
 
-                    // Semua program yang pernah diikuti (aktif + nonaktif)
-                    $semuaPernah = $relasi->pluck('kelas.id')->map(fn ($id) => (int) $id);
-                    // Program yang saat ini aktif
-                    $aktif = collect(self::programAktifSiswa($record));
+                                    DatePicker::make('tanggal_lahir')
+                                        ->label('Tanggal Lahir')
+                                        ->native(false),
 
-                    // Siswa tidak aktif/cuti/keluar tidak boleh mendapat program aktif dari form ini.
-                    // Saat siswa dinonaktifkan, program aktifnya sudah dimatikan oleh model Siswa.
-                    $bolehAktifkan = $record->wasRecentlyCreated || ! $record->sedangTidakAktif();
+                                    Select::make('agama')
+                                        ->label('Agama')
+                                        ->options([
+                                            'Islam' => 'Islam',
+                                            'Kristen' => 'Kristen',
+                                            'Katolik' => 'Katolik',
+                                            'Hindu' => 'Hindu',
+                                            'Buddha' => 'Buddha',
+                                            'Konghucu' => 'Konghucu',
+                                            'Lainnya' => 'Lainnya',
+                                        ]),
 
-                    if ($bolehAktifkan) {
-                        // 1. Program yang belum pernah diikuti -> catat bergabung hari ini
-                        foreach ($dipilih->diff($semuaPernah) as $id) {
-                            $relasi->attach($id, ['tanggal_gabung' => now(), 'is_active' => true]);
-                        }
+                                    TextInput::make('kewarganegaraan')
+                                        ->label('Kewarganegaraan')
+                                        ->default('Indonesia')
+                                        ->maxLength(50),
 
-                        // 2. Program lama (sebelumnya nonaktif) yang dipilih lagi -> aktifkan kembali
-                        foreach ($dipilih->intersect($semuaPernah)->diff($aktif) as $id) {
-                            $relasi->updateExistingPivot($id, ['is_active' => true]);
-                        }
-                    }
+                                    TextInput::make('kelas')
+                                        ->label('Kelas (Sekolah Asal)')
+                                        ->placeholder('Contoh: 7 SMP / 10 SMA')
+                                        ->maxLength(50),
 
-                    // 3. Program yang dilepas -> nonaktifkan, riwayat tidak dihapus
-                    foreach ($aktif->diff($dipilih) as $id) {
-                        $relasi->updateExistingPivot($id, ['is_active' => false]);
-                    }
-                })
-                // Tampilan: program penuh tidak bisa dipilih, kecuali siswa ini sudah aktif di sana
-                ->disableOptionWhen(function (string $value, ?Model $record) use ($ambilIdPenuh, $ambilIdAktifSiswa) {
-                    $id = (int) $value;
+                                    TextInput::make('asal_sekolah')
+                                        ->label('Asal Sekolah')
+                                        ->maxLength(150),
+                                ]),
 
-                    return in_array($id, $ambilIdPenuh(), true)
-                        && ! in_array($id, $ambilIdAktifSiswa($record), true);
-                })
-                // Server: tolak program baru untuk siswa tidak aktif, dan program yang kuotanya penuh
-                ->rule(fn (?Model $record, Get $get): Closure => function (string $attribute, $value, Closure $fail) use ($record, $get) {
-                    $tidakAktifDiForm = $record?->exists && self::siswaTidakAktifDiForm($get);
+                            Section::make('Alamat & Kontak Siswa')
+                                ->columns(2)
+                                ->schema([
+                                    Textarea::make('alamat')
+                                        ->label('Alamat Jalan / Dusun')
+                                        ->columnSpanFull(),
 
-                    $dipilih = collect($value ?? [])->map(fn ($id) => (int) $id);
-                    $akanDitambah = $dipilih
-                        ->diff(self::programAktifSiswa($record))
-                        ->values()
-                        ->all();
+                                    Grid::make(4)
+                                        ->schema([
+                                            TextInput::make('rt')
+                                                ->label('RT')
+                                                ->maxLength(5),
 
-                    if ($akanDitambah === []) {
-                        return;
-                    }
+                                            TextInput::make('rw')
+                                                ->label('RW')
+                                                ->maxLength(5),
 
-                    if ($tidakAktifDiForm) {
-                        $fail('Siswa sedang tidak aktif, cuti, atau keluar. Aktifkan siswa (toggle aktif dan status) sebelum menambah atau mengaktifkan program.');
+                                            TextInput::make('kelurahan')
+                                                ->label('Kelurahan / Desa')
+                                                ->maxLength(100),
 
-                        return;
-                    }
+                                            TextInput::make('kode_pos')
+                                                ->label('Kode Pos')
+                                                ->maxLength(10),
+                                        ]),
 
-                    $namaPenuh = Kelas::whereIn('id', Kelas::idPenuh($akanDitambah))->pluck('nama_kelas');
+                                    TextInput::make('telepon')
+                                        ->label('No. Seluler / WhatsApp')
+                                        ->tel()
+                                        ->helperText('Format apa saja, otomatis diseragamkan ke 628xxx.'),
 
-                    if ($namaPenuh->isNotEmpty()) {
-                        $fail('Kuota penuh untuk program: ' . $namaPenuh->join(', ') . '. Hapus dari pilihan atau naikkan kuota maksimalnya.');
-                    }
-                }),
-            
-            Select::make('jadwal_ids')
-                ->label('Pilih jam')
-                ->multiple()
-                ->options(fn (Get $get) => PenjadwalanSiswa::opsi(self::idInt($get('kelasList'))))
-                ->visible(fn (Get $get) => filled($get('kelasList')))
-                ->dehydrated(false)
-                ->helperText('Pilih satu atau lebih jam yang diikuti siswa. Jam yang bentrok tidak diizinkan.')
-                ->required(function (Get $get, ?Model $record): bool {
-                    $wajib = PenjadwalanSiswa::kelasWajibPilih(
-                        $record?->getKey(),
-                        self::idInt($get('kelasList')),
-                        self::programAktifSiswa($record),
-                    );
+                                    TextInput::make('telepon_rumah')
+                                        ->label('No. Telepon Rumah')
+                                        ->tel(),
 
-                    return PenjadwalanSiswa::namaKelasTanpaPilihan($wajib, [])->isNotEmpty();
-                })
-                // Nilai awal di form edit: jam dari program yang masih aktif
-                ->loadStateFromRelationshipsUsing(function (Select $component, ?Model $record) {
-                    $component->state($record?->exists
-                        ? PenjadwalanSiswa::idTersimpan($record->getKey(), self::programAktifSiswa($record))
-                        : []);
-                })
-                ->saveRelationshipsUsing(function (Model $record, $state) {
-                    PenjadwalanSiswa::sinkron($record, self::idInt($state));
-                })
-                ->rule(fn (Get $get, ?Model $record): Closure => function (string $attribute, $value, Closure $fail) use ($get, $record) {
-                    $kelasIds = self::idInt($get('kelasList'));
-                    $jadwalIds = self::idInt($value);
+                                    TextInput::make('media_sosial')
+                                        ->label('Media Sosial Siswa')
+                                        ->placeholder('Contoh: IG @username')
+                                        ->maxLength(255),
 
-                    $wajib = PenjadwalanSiswa::kelasWajibPilih(
-                        $record?->getKey(),
-                        $kelasIds,
-                        self::programAktifSiswa($record),
-                    );
+                                    TextInput::make('alat_transportasi')
+                                        ->label('Alat Transportasi')
+                                        ->maxLength(100),
 
-                    $tanpa = PenjadwalanSiswa::namaKelasTanpaPilihan($wajib, $jadwalIds);
+                                    TextInput::make('sumber_informasi')
+                                        ->label('Sumber Informasi')
+                                        ->placeholder('Contoh: Brosur, Instagram, Teman')
+                                        ->maxLength(100),
+                                ]),
+                        ]),
 
-                    if ($tanpa->isNotEmpty()) {
-                        $fail('Pilih minimal satu jam untuk program: ' . $tanpa->join(', ') . '.');
+                    // =================================================================
+                    // TAB 2: AKADEMIK, PROGRAM & STATUS
+                    // =================================================================
+                    Tab::make('Program & Status')
+                        ->icon('heroicon-o-academic-cap')
+                        ->schema([
+                            Select::make('cabang_id')
+                                ->relationship('cabang', 'nama_cabang')
+                                ->searchable()
+                                ->preload()
+                                ->required()
+                                ->live()
+                                ->visible(fn () => auth()->user()->hasRole('super_admin'))
+                                ->default(fn () => auth()->user()->cabang->first()?->id)
+                                ->dehydrated(),
 
-                        return;
-                    }
+                            Select::make('kelasList')
+                                ->label('Program yang Diikuti')
+                                ->relationship(
+                                    'kelasList',
+                                    'nama_kelas',
+                                    modifyQueryUsing: fn (Builder $query, Get $get) => $query
+                                        ->where('cabang_id', $get('cabang_id') ?? auth()->user()->cabang->first()?->id),
+                                )
+                                ->multiple()
+                                ->searchable()
+                                ->preload()
+                                ->live()
+                                ->afterStateUpdated(function (Get $get, Set $set, ?Model $record) {
+                                    $kelasIds = self::idInt($get('kelasList'));
 
-                    if ($pesan = PenjadwalanSiswa::pesanBentrok($jadwalIds)) {
-                        $fail($pesan);
-                    }
-                }),
+                                    $dipilih = collect(self::idInt($get('jadwal_ids')))
+                                        ->intersect(PenjadwalanSiswa::idJadwalDi($kelasIds));
 
-            TextInput::make('nama')
-                ->label('Nama Siswa')
-                ->required()
-                ->maxLength(255),
+                                    if ($record?->exists) {
+                                        $baru = array_diff($kelasIds, self::programAktifSiswa($record));
+                                        $dipilih = $dipilih->merge(PenjadwalanSiswa::idTersimpan($record->getKey(), $baru));
+                                    }
 
-            DatePicker::make('tanggal_lahir')
-                ->native(false),
+                                    $set('jadwal_ids', $dipilih->unique()->values()->all());
+                                })
+                                ->required(fn (Get $get, ?Model $record): bool => ! $record?->exists || ! self::siswaTidakAktifDiForm($get))
+                                ->helperText(fn (Get $get, ?Model $record) => $record?->exists && self::siswaTidakAktifDiForm($get)
+                                    ? 'Siswa tidak aktif/cuti/keluar: program yang masih aktif akan dinonaktifkan otomatis saat disimpan.'
+                                    : null)
+                                ->loadStateFromRelationshipsUsing(function (Select $component, ?Model $record) {
+                                    $component->state(self::programAktifSiswa($record));
+                                })
+                                ->saveRelationshipsUsing(function (Model $record, $state) {
+                                    $dipilih = collect($state ?? [])->map(fn ($id) => (int) $id);
+                                    $relasi  = $record->kelasList();
 
-            Textarea::make('alamat'),
+                                    $semuaPernah = $relasi->pluck('kelas.id')->map(fn ($id) => (int) $id);
+                                    $aktif = collect(self::programAktifSiswa($record));
 
-            TextInput::make('telepon')
-                ->tel()
-                ->helperText('Format apa saja, otomatis diseragamkan ke 628xxx.'),
+                                    $bolehAktifkan = $record->wasRecentlyCreated || ! $record->sedangTidakAktif();
 
-            Select::make('status')
-                ->options([
-                    'aktif' => 'Aktif',
-                    'cuti' => 'Cuti',
-                    'keluar' => 'Keluar',
-                ])
-                ->default('aktif')
-                ->required()
-                ->live(),
+                                    if ($bolehAktifkan) {
+                                        foreach ($dipilih->diff($semuaPernah) as $id) {
+                                            $relasi->attach($id, ['tanggal_gabung' => now(), 'is_active' => true]);
+                                        }
 
-            DatePicker::make('tanggal_daftar')
-                ->native(false)
-                ->default(now())
-                ->required(),
+                                        foreach ($dipilih->intersect($semuaPernah)->diff($aktif) as $id) {
+                                            $relasi->updateExistingPivot($id, ['is_active' => true]);
+                                        }
+                                    }
 
-            Toggle::make('is_active')
-                ->default(true)
-                ->required()
-                ->live(),
+                                    foreach ($aktif->diff($dipilih) as $id) {
+                                        $relasi->updateExistingPivot($id, ['is_active' => false]);
+                                    }
+                                })
+                                ->disableOptionWhen(function (string $value, ?Model $record) use ($ambilIdPenuh, $ambilIdAktifSiswa) {
+                                    $id = (int) $value;
 
-            Fieldset::make('Data Wali Murid')
-                ->relationship('waliMurid')
-                ->schema([
-                    TextInput::make('nama')
-                        ->label('Nama Wali Murid')
-                        ->required()
-                        ->maxLength(255),
+                                    return in_array($id, $ambilIdPenuh(), true)
+                                        && ! in_array($id, $ambilIdAktifSiswa($record), true);
+                                })
+                                ->rule(fn (?Model $record, Get $get): Closure => function (string $attribute, $value, Closure $fail) use ($record, $get) {
+                                    $tidakAktifDiForm = $record?->exists && self::siswaTidakAktifDiForm($get);
 
-                    TextInput::make('telepon')
-                        ->label('Telepon Wali Murid')
-                        ->tel()
-                        ->helperText('Format apa saja, otomatis diseragamkan ke 628xxx.'),
+                                    $dipilih = collect($value ?? [])->map(fn ($id) => (int) $id);
+                                    $akanDitambah = $dipilih
+                                        ->diff(self::programAktifSiswa($record))
+                                        ->values()
+                                        ->all();
 
-                    TextInput::make('email')
-                        ->label('Email Wali Murid')
-                        ->email()
-                        ->unique(table: 'wali_murid', ignoreRecord: true)
-                        ->maxLength(255),
+                                    if ($akanDitambah === []) {
+                                        return;
+                                    }
 
-                    TextInput::make('password')
-                        ->label('Password Wali Murid')
-                        ->password()
-                        ->revealable()
-                        ->dehydrateStateUsing(fn (?string $state) => Hash::make($state))
-                        ->dehydrated(fn (?string $state) => filled($state))
-                        ->required(fn (string $context) => $context === 'create')
-                        ->helperText(fn (string $context) => $context === 'edit'
-                            ? 'Kosongkan jika tidak ingin mengubah password.'
-                            : 'Dipakai untuk login portal wali murid (menyusul).')
-                        ->maxLength(255),
+                                    if ($tidakAktifDiForm) {
+                                        $fail('Siswa sedang tidak aktif, cuti, atau keluar. Aktifkan siswa (toggle aktif dan status) sebelum menambah atau mengaktifkan program.');
+
+                                        return;
+                                    }
+
+                                    $namaPenuh = Kelas::whereIn('id', Kelas::idPenuh($akanDitambah))->pluck('nama_kelas');
+
+                                    if ($namaPenuh->isNotEmpty()) {
+                                        $fail('Kuota penuh untuk program: ' . $namaPenuh->join(', ') . '. Hapus dari pilihan atau naikkan kuota maksimalnya.');
+                                    }
+                                }),
+
+                            Select::make('jadwal_ids')
+                                ->label('Pilih jam')
+                                ->multiple()
+                                ->options(fn (Get $get) => PenjadwalanSiswa::opsi(self::idInt($get('kelasList'))))
+                                ->visible(fn (Get $get) => filled($get('kelasList')))
+                                ->dehydrated(false)
+                                ->helperText('Pilih satu atau lebih jam yang diikuti siswa. Jam yang bentrok tidak diizinkan.')
+                                ->required(function (Get $get, ?Model $record): bool {
+                                    $wajib = PenjadwalanSiswa::kelasWajibPilih(
+                                        $record?->getKey(),
+                                        self::idInt($get('kelasList')),
+                                        self::programAktifSiswa($record),
+                                    );
+
+                                    return PenjadwalanSiswa::namaKelasTanpaPilihan($wajib, [])->isNotEmpty();
+                                })
+                                ->loadStateFromRelationshipsUsing(function (Select $component, ?Model $record) {
+                                    $component->state($record?->exists
+                                        ? PenjadwalanSiswa::idTersimpan($record->getKey(), self::programAktifSiswa($record))
+                                        : []);
+                                })
+                                ->saveRelationshipsUsing(function (Model $record, $state) {
+                                    PenjadwalanSiswa::sinkron($record, self::idInt($state));
+                                })
+                                ->rule(fn (Get $get, ?Model $record): Closure => function (string $attribute, $value, Closure $fail) use ($get, $record) {
+                                    $kelasIds = self::idInt($get('kelasList'));
+                                    $jadwalIds = self::idInt($value);
+
+                                    $wajib = PenjadwalanSiswa::kelasWajibPilih(
+                                        $record?->getKey(),
+                                        $kelasIds,
+                                        self::programAktifSiswa($record),
+                                    );
+
+                                    $tanpa = PenjadwalanSiswa::namaKelasTanpaPilihan($wajib, $jadwalIds);
+
+                                    if ($tanpa->isNotEmpty()) {
+                                        $fail('Pilih minimal satu jam untuk program: ' . $tanpa->join(', ') . '.');
+
+                                        return;
+                                    }
+
+                                    if ($pesan = PenjadwalanSiswa::pesanBentrok($jadwalIds)) {
+                                        $fail($pesan);
+                                    }
+                                }),
+
+                            Grid::make(2)
+                                ->schema([
+                                    DatePicker::make('tanggal_daftar')
+                                        ->label('Tanggal Daftar')
+                                        ->native(false)
+                                        ->default(now())
+                                        ->required(),
+
+                                    DatePicker::make('tanggal_masuk')
+                                        ->label('Tanggal Masuk')
+                                        ->native(false),
+
+                                    Select::make('status')
+                                        ->options([
+                                            'aktif' => 'Aktif',
+                                            'cuti' => 'Cuti',
+                                            'keluar' => 'Keluar',
+                                        ])
+                                        ->default('aktif')
+                                        ->required()
+                                        ->live(),
+
+                                    Toggle::make('is_active')
+                                        ->label('Akun / Siswa Aktif')
+                                        ->default(true)
+                                        ->required()
+                                        ->live(),
+                                ]),
+                        ]),
+
+                    // =================================================================
+                    // TAB 3: DATA KELUARGA (AYAH, IBU, WALI) -> Relasi `keluarga`
+                    // =================================================================
+                    Tab::make('Data Orang Tua & Wali')
+                        ->icon('heroicon-o-users')
+                        ->schema([
+                            Fieldset::make('Biodata Keluarga')
+                                ->relationship('keluarga')
+                                ->schema([
+                                    Section::make('Data Ayah')
+                                        ->columns(2)
+                                        ->collapsible()
+                                        ->schema([
+                                            TextInput::make('nama_ayah')->label('Nama Ayah')->maxLength(255),
+                                            TextInput::make('nik_ayah')->label('NIK Ayah')->maxLength(20),
+                                            TextInput::make('tempat_lahir_ayah')->label('Tempat Lahir Ayah')->maxLength(100),
+                                            DatePicker::make('tanggal_lahir_ayah')->label('Tanggal Lahir Ayah')->native(false),
+                                            TextInput::make('pendidikan_ayah')->label('Pendidikan Terakhir')->maxLength(50),
+                                            TextInput::make('pekerjaan_ayah')->label('Pekerjaan Ayah')->maxLength(100),
+                                            TextInput::make('penghasilan_ayah')->label('Penghasilan Ayah')->maxLength(100),
+                                            TextInput::make('media_sosial_ayah')->label('Media Sosial Ayah')->maxLength(255),
+                                        ]),
+
+                                    Section::make('Data Ibu')
+                                        ->columns(2)
+                                        ->collapsible()
+                                        ->schema([
+                                            TextInput::make('nama_ibu')->label('Nama Ibu')->maxLength(255),
+                                            TextInput::make('nik_ibu')->label('NIK Ibu')->maxLength(20),
+                                            TextInput::make('tempat_lahir_ibu')->label('Tempat Lahir Ibu')->maxLength(100),
+                                            DatePicker::make('tanggal_lahir_ibu')->label('Tanggal Lahir Ibu')->native(false),
+                                            TextInput::make('pendidikan_ibu')->label('Pendidikan Terakhir')->maxLength(50),
+                                            TextInput::make('pekerjaan_ibu')->label('Pekerjaan Ibu')->maxLength(100),
+                                            TextInput::make('penghasilan_ibu')->label('Penghasilan Ibu')->maxLength(100),
+                                            TextInput::make('media_sosial_ibu')->label('Media Sosial Ibu')->maxLength(255),
+                                        ]),
+
+                                    Section::make('Data Wali (Jika Berbeda dari Orang Tua)')
+                                        ->columns(2)
+                                        ->collapsible()
+                                        ->collapsed()
+                                        ->schema([
+                                            TextInput::make('nama_wali')->label('Nama Wali')->maxLength(255),
+                                            TextInput::make('nik_wali')->label('NIK Wali')->maxLength(20),
+                                            TextInput::make('tahun_lahir_wali')
+                                                ->label('Tahun Lahir Wali')
+                                                ->numeric()
+                                                ->minValue(1900)
+                                                ->maxValue((int) date('Y')),
+                                            TextInput::make('pendidikan_wali')->label('Pendidikan Terakhir')->maxLength(50),
+                                            TextInput::make('pekerjaan_wali')->label('Pekerjaan Wali')->maxLength(100),
+                                            TextInput::make('penghasilan_wali')->label('Penghasilan Wali')->maxLength(100),
+                                            TextInput::make('telepon_wali')->label('No. Telepon Wali')->tel(),
+                                            TextInput::make('seluler_wali')->label('No. Seluler / WA Wali')->tel(),
+                                            Textarea::make('alamat_wali')->label('Alamat Wali')->columnSpanFull(),
+                                        ]),
+                                ]),
+                        ]),
+
+                    // =================================================================
+                    // TAB 4: AKUN WALI MURID -> Relasi `waliMurid`
+                    // =================================================================
+                    Tab::make('Akun Portal Wali')
+                        ->icon('heroicon-o-key')
+                        ->schema([
+                            Fieldset::make('Akun Login Wali Murid')
+                                ->relationship('waliMurid')
+                                ->columns(2)
+                                ->schema([
+                                    TextInput::make('nama')
+                                        ->label('Nama Pemilik Akun Wali')
+                                        ->required()
+                                        ->maxLength(255),
+
+                                    TextInput::make('telepon')
+                                        ->label('Telepon Wali Murid')
+                                        ->tel()
+                                        ->helperText('Format apa saja, otomatis diseragamkan ke 628xxx.'),
+
+                                    TextInput::make('email')
+                                        ->label('Email Wali Murid')
+                                        ->email()
+                                        ->unique(table: 'wali_murid', ignoreRecord: true)
+                                        ->maxLength(255),
+
+                                    TextInput::make('password')
+                                        ->label('Password Wali Murid')
+                                        ->password()
+                                        ->revealable()
+                                        ->dehydrateStateUsing(fn (?string $state) => Hash::make($state))
+                                        ->dehydrated(fn (?string $state) => filled($state))
+                                        ->required(fn (string $context) => $context === 'create')
+                                        ->helperText(fn (string $context) => $context === 'edit'
+                                            ? 'Kosongkan jika tidak ingin mengubah password.'
+                                            : 'Dipakai untuk login portal wali murid (menyusul).')
+                                        ->maxLength(255),
+                                ]),
+                        ]),
                 ]),
         ]);
     }
@@ -301,19 +481,43 @@ class SiswaResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('nama')->searchable()->sortable(),
+                Tables\Columns\TextColumn::make('nisn')
+                    ->label('NISN')
+                    ->searchable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('nama')
+                    ->searchable()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('jenis_kelamin')
+                    ->label('L/P')
+                    ->badge()
+                    ->color(fn (?string $state): string => match ($state) {
+                        'L' => 'info',
+                        'P' => 'danger',
+                        default => 'gray',
+                    })
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('asal_sekolah')
+                    ->label('Asal Sekolah')
+                    ->searchable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('kelasAktif.nama_kelas')
                     ->label('Program')
                     ->badge()
                     ->separator(','),
-                Tables\Columns\TextColumn::make('waliMurid.nama')->label('Wali Murid')->searchable(),
-                Tables\Columns\BadgeColumn::make('status')
-                    ->colors([
-                        'success' => 'aktif',
-                        'warning' => 'cuti',
-                        'danger' => 'keluar',
-                    ]),
-                Tables\Columns\IconColumn::make('is_active')->boolean(),
+                Tables\Columns\TextColumn::make('waliMurid.nama')
+                    ->label('Wali Murid')
+                    ->searchable(),
+                Tables\Columns\TextColumn::make('status')
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'aktif' => 'success',
+                        'cuti' => 'warning',
+                        'keluar' => 'danger',
+                        default => 'gray',
+                    }),
+                Tables\Columns\IconColumn::make('is_active')
+                    ->boolean(),
             ])
             ->filters([
                 Tables\Filters\TrashedFilter::make(),
@@ -322,6 +526,12 @@ class SiswaResource extends Resource
                     ->trueLabel('Aktif')
                     ->falseLabel('Non-aktif')
                     ->placeholder('Semua'),
+                Tables\Filters\SelectFilter::make('jenis_kelamin')
+                    ->label('Jenis Kelamin')
+                    ->options([
+                        'L' => 'Laki-laki',
+                        'P' => 'Perempuan',
+                    ]),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
