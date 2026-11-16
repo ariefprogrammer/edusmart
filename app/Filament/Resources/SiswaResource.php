@@ -317,6 +317,11 @@ class SiswaResource extends Resource
             ])
             ->filters([
                 Tables\Filters\TrashedFilter::make(),
+                Tables\Filters\TernaryFilter::make('is_active')
+                    ->label('Status Aktif')
+                    ->trueLabel('Aktif')
+                    ->falseLabel('Non-aktif')
+                    ->placeholder('Semua'),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
