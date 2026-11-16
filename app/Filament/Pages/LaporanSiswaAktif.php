@@ -108,6 +108,36 @@ class LaporanSiswaAktif extends Page implements HasForms
             ->values();
     }
 
+    #[Computed]
+    public function ringkasanProgram(): array
+    {
+        $akhir = CarbonImmutable::parse($this->laporan['akhir'])->toDateString();
+        $kelasId = $this->data['kelas_id'] ?? null;
+        $cabangIds = $this->cabangIdsTerbatas($this->data['cabang_id'] ?? null);
+
+        // Satu baris kelas_siswa = satu siswa di satu program, yang aktif pada tanggal posisi laporan
+        $aktif = DB::table('kelas_siswa as ks')
+            ->join('siswa as s', 's.id', '=', 'ks.siswa_id')
+            ->whereNull('s.deleted_at')
+            ->when($cabangIds !== null, fn ($q) => $q->whereIn('s.cabang_id', $cabangIds))
+            ->when($kelasId, fn ($q) => $q->where('ks.kelas_id', (int) $kelasId))
+            ->whereRaw(
+                "(select d.status from kelas_siswa_detail as d
+                where d.kelas_siswa_id = ks.id and date(d.tanggal) <= ?
+                order by d.tanggal desc, d.id desc limit 1) = 'aktif'",
+                [$akhir],
+            );
+
+        $jumlahProgram = (clone $aktif)->count();
+        $jumlahSiswa = (clone $aktif)->distinct()->count('ks.siswa_id');
+
+        return [
+            'jumlah' => $jumlahProgram,
+            'siswa' => $jumlahSiswa,
+            'rasio' => $jumlahSiswa > 0 ? round($jumlahProgram / $jumlahSiswa, 1) : 0,
+        ];
+    }
+
     public function updatingFilterStatus(): void
     {
         $this->resetPage();

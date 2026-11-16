@@ -4,6 +4,7 @@
     @php
         $laporan = $this->laporan;
         $r = $laporan['ringkasan'];
+        $p = $this->ringkasanProgram;
         $tgl = fn (string $t, string $format = 'd F Y') => \Carbon\Carbon::parse($t)->locale('id')->translatedFormat($format);
         $labelGerak = [
             'baru' => 'Baru bergabung',
@@ -28,6 +29,14 @@
         <x-filament::section>
             <div style="font-size: 13px; opacity: .7;">Siswa tidak aktif</div>
             <div style="font-size: 32px; font-weight: 700; color: #dc2626;">{{ $r['tidak_aktif'] }}</div>
+        </x-filament::section>
+
+        <x-filament::section>
+            <div style="font-size: 13px; opacity: .7;">Jumlah program</div>
+            <div style="font-size: 32px; font-weight: 700; color: #2563eb;">{{ $p['jumlah'] }}</div>
+            <div style="font-size: 12px; opacity: .6;">
+                {{ number_format($p['rasio'], 1, ',', '.') }} program per siswa aktif · {{ $p['siswa'] }} siswa
+            </div>
         </x-filament::section>
 
         <x-filament::section>
