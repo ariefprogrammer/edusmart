@@ -18,6 +18,10 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Support\Enums\Alignment;
 use App\Filament\Resources\KelasResource\RelationManagers\SiswaRelationManager;
 use Filament\Forms\Components\FileUpload;
+use App\Exports\JadwalProgramExport;
+use Filament\Notifications\Notification;
+use Illuminate\Support\Str;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class KelasResource extends Resource
 {
@@ -167,6 +171,27 @@ class KelasResource extends Resource
                     ->icon('heroicon-o-arrow-top-right-on-square')
                     ->url(fn (Kelas $record) => \App\Filament\Pages\ManajemenProgram::getUrl(['kelas' => $record->id]))
                     ->openUrlInNewTab(),
+                Tables\Actions\Action::make('exportJadwal')
+                    ->label('Export Excel')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('gray')
+                    ->action(function (Kelas $record) {
+                        if (! $record->jadwal()->where('is_active', true)->exists()) {
+                            Notification::make()
+                                ->warning()
+                                ->title('Belum ada jadwal aktif')
+                                ->body('Program ini belum punya jadwal aktif untuk diexport.')
+                                ->send();
+
+                            return;
+                        }
+
+                        $spreadsheet = (new JadwalProgramExport())->build($record);
+
+                        return response()->streamDownload(function () use ($spreadsheet) {
+                            (new Xlsx($spreadsheet))->save('php://output');
+                        }, 'jadwal-' . Str::slug($record->nama_kelas) . '-' . now()->format('Y-m-d_His') . '.xlsx');
+                    }),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
