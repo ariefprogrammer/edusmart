@@ -204,6 +204,25 @@ class JadwalPenggantiResource extends Resource
                         $fail('Tanggal ini jatuh pada hari ' . JadwalPengganti::namaHari($value)
                             . ', sedangkan jadwal pengganti yang dipilih adalah hari ' . $tujuan->hari . '.');
                     }
+                })
+                // Tanggal pengganti harus di bulan yang sama dengan tanggal seharusnya
+                ->rule(fn (Get $get, ?Model $record): Closure => function (string $attribute, $value, Closure $fail) use ($get, $record) {
+                    $seharusnya = $get('tanggal_seharusnya');
+
+                    if (blank($value) || blank($seharusnya)) {
+                        return;
+                    }
+
+                    // Saat edit, kedua tanggal yang tidak diubah tidak dicek ulang (data lama yang beda bulan tetap bisa diedit isinya)
+                    if ($record?->exists
+                        && $record->tanggal_seharusnya?->isSameDay(Carbon::parse($seharusnya))
+                        && $record->tanggal_pengganti?->isSameDay(Carbon::parse($value))) {
+                        return;
+                    }
+
+                    if ($pesan = JadwalPengganti::pesanBedaBulan($seharusnya, $value)) {
+                        $fail($pesan);
+                    }
                 }),
 
             Select::make('guru_id')

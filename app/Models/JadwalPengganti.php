@@ -324,4 +324,22 @@ class JadwalPengganti extends Model
             ? substr($keterangan, 0, -strlen($akhiran))
             : $keterangan;
     }
+
+    /**
+     * Tanggal pengganti harus di bulan (dan tahun) yang sama dengan tanggal seharusnya.
+     * Mengembalikan pesan jika berbeda, atau null jika sudah sama.
+     */
+    public static function pesanBedaBulan(string $tanggalSeharusnya, string $tanggalPengganti): ?string
+    {
+        $seharusnya = Carbon::parse($tanggalSeharusnya);
+        $pengganti = Carbon::parse($tanggalPengganti);
+
+        if ($seharusnya->format('Y-m') === $pengganti->format('Y-m')) {
+            return null;
+        }
+
+        return 'Tanggal pengganti (' . $pengganti->locale('id')->translatedFormat('F Y')
+            . ') harus berada di bulan yang sama dengan tanggal seharusnya ('
+            . $seharusnya->locale('id')->translatedFormat('F Y') . ').';
+    }
 }

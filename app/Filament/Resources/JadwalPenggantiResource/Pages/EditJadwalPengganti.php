@@ -39,6 +39,7 @@ class EditJadwalPengganti extends EditRecord
         $record = $this->getRecord();
 
         $siswaIds = $this->data['siswa'] ?? [];
+        $tanggalSeharusnya = $data['tanggal_seharusnya'] ?? $record->tanggal_seharusnya->toDateString();
         $tanggalPengganti = $data['tanggal_pengganti'] ?? $record->tanggal_pengganti->toDateString();
 
         // Jadwal tujuan yang sengaja dikosongkan tidak boleh kembali ke nilai lama
@@ -46,8 +47,13 @@ class EditJadwalPengganti extends EditRecord
             ? $data['jadwal_tujuan_id']
             : $record->jadwal_tujuan_id;
 
+        // Data lama yang beda bulan tetap bisa diedit selama kedua tanggalnya tidak diubah
+        $tanggalBerubah = \Carbon\Carbon::parse($tanggalSeharusnya)->toDateString() !== $record->tanggal_seharusnya->toDateString()
+            || \Carbon\Carbon::parse($tanggalPengganti)->toDateString() !== $record->tanggal_pengganti->toDateString();
+
         // Lapis kedua: cek ulang tepat sebelum menyimpan
         $pesan = array_filter([
+            $tanggalBerubah ? JadwalPengganti::pesanBedaBulan($tanggalSeharusnya, $tanggalPengganti) : null,
             JadwalPengganti::pesanBentrok(
                 $data['cabang_id'] ?? $record->cabang_id,
                 $data['guru_id'] ?? $record->guru_id,
@@ -60,7 +66,7 @@ class EditJadwalPengganti extends EditRecord
             ),
             JadwalPengganti::pesanSiswaBermasalah(
                 $data['kelas_id'] ?? $record->kelas_id,
-                $data['tanggal_seharusnya'] ?? $record->tanggal_seharusnya->toDateString(),
+                $tanggalSeharusnya,
                 $siswaIds,
                 $record->getKey(),
                 $record->siswa()->pluck('siswa.id')->all(),

@@ -46,6 +46,7 @@ class CreateJadwalPengganti extends CreateRecord
 
         // Lapis kedua: cek ulang tepat sebelum menyimpan
         $pesan = array_filter([
+            JadwalPengganti::pesanBedaBulan($data['tanggal_seharusnya'], $data['tanggal_pengganti']),
             JadwalPengganti::pesanBentrok(
                 $data['cabang_id'], $data['guru_id'], $data['kelas_id'],
                 $data['tanggal_pengganti'], $data['jam_mulai'], $data['jam_selesai'],
