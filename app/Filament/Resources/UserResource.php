@@ -87,7 +87,12 @@ class UserResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                Tables\Filters\SelectFilter::make('cabang')
+                    ->label('Cabang')
+                    ->relationship('cabang', 'nama_cabang')
+                    ->searchable()
+                    ->preload()
+                    ->visible(fn () => auth()->user()->hasRole('super_admin')),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
