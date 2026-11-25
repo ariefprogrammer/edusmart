@@ -481,6 +481,10 @@ class SiswaResource extends Resource
     {
         return $table
             ->columns([
+                Tables\Columns\TextColumn::make('cabang.nama_cabang')
+                    ->label('Cabang')
+                    ->searchable()
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('nisn')
                     ->label('NISN')
                     ->searchable()
@@ -520,7 +524,14 @@ class SiswaResource extends Resource
                     ->boolean(),
             ])
             ->filters([
+                
                 Tables\Filters\TrashedFilter::make(),
+                Tables\Filters\SelectFilter::make('cabang_id')
+                    ->label('Cabang')
+                    ->relationship('cabang', 'nama_cabang')
+                    ->searchable()
+                    ->preload()
+                    ->visible(fn () => auth()->user()->hasRole('super_admin')),
                 Tables\Filters\TernaryFilter::make('is_active')
                     ->label('Status Aktif')
                     ->trueLabel('Aktif')
