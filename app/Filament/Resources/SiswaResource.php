@@ -532,6 +532,12 @@ class SiswaResource extends Resource
                     ->searchable()
                     ->preload()
                     ->visible(fn () => auth()->user()->hasRole('super_admin')),
+                Tables\Filters\SelectFilter::make('kelasAktif')
+                    ->label('Kelas / Program')
+                    ->relationship('kelasAktif', 'nama_kelas')
+                    ->searchable()
+                    ->preload()
+                    ->multiple(),
                 Tables\Filters\TernaryFilter::make('is_active')
                     ->label('Status Aktif')
                     ->trueLabel('Aktif')
