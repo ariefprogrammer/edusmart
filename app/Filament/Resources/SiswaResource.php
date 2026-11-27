@@ -353,11 +353,13 @@ class SiswaResource extends Resource
                                         ->label('Tanggal Daftar')
                                         ->native(false)
                                         ->default(now())
-                                        ->required(),
+                                        ->required()
+                                        ->disabled(fn (string $operation, ?Model $record): bool => $operation === 'edit' && filled($record?->tanggal_daftar)),
 
                                     DatePicker::make('tanggal_masuk')
                                         ->label('Tanggal Masuk')
-                                        ->native(false),
+                                        ->native(false)
+                                        ->disabled(fn (string $operation, ?Model $record): bool => $operation === 'edit' && filled($record?->tanggal_masuk)),
 
                                     Select::make('status')
                                         ->options([
