@@ -96,6 +96,13 @@
                     $sorot = ! empty($k['sorot']);
                     $latar = $sorot ? $k['warna'] . '14' : 'rgba(128,128,128,.06)';
                     $garis = $sorot ? $k['warna'] . '66' : 'rgba(128,128,128,.3)';
+
+                    $warnaGerak = [
+                        'baru' => '#16a34a',
+                        'kembali' => '#2563eb',
+                        'berhenti' => '#dc2626',
+                        'masuk_keluar' => '#d97706',
+                    ];
                 @endphp
 
                 <div style="position: relative; padding: 16px; border-radius: 12px; border: 1px solid {{ $garis }}; border-top: 4px solid {{ $k['warna'] }}; background: {{ $latar }};">

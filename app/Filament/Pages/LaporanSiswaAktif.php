@@ -19,6 +19,10 @@ use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
 use Livewire\WithPagination;
 use Illuminate\Pagination\LengthAwarePaginator;
+use App\Exports\LaporanSiswaAktifExport;
+use Filament\Actions\Action;
+use Filament\Notifications\Notification;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class LaporanSiswaAktif extends Page implements HasForms
 {
@@ -234,5 +238,57 @@ class LaporanSiswaAktif extends Page implements HasForms
         $bulan = (string) ($this->data['bulan'] ?? '');
 
         return array_key_exists($bulan, $this->opsiBulan()) ? $bulan : now()->format('Y-m');
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('exportExcel')
+                ->label('Export Excel')
+                ->extraAttributes([
+                    'style' => 'background-color: #2563eb; color: #ffffff; border-color: #2563eb;',
+                ])
+                ->icon('heroicon-o-arrow-down-tray')
+                ->action(function () {
+                    $siswaList = $this->siswaTampil;
+
+                    if ($siswaList->isEmpty()) {
+                        Notification::make()->warning()->title('Tidak ada data untuk diexport')->send();
+
+                        return;
+                    }
+
+                    $spreadsheet = (new LaporanSiswaAktifExport())->build(
+                        $this->laporan,
+                        $this->ringkasanProgram,
+                        $siswaList,
+                        $this->metaExport(),
+                    );
+
+                    return response()->streamDownload(function () use ($spreadsheet) {
+                        (new Xlsx($spreadsheet))->save('php://output');
+                    }, 'laporan-siswa-aktif-' . $this->bulanTerpilih() . '.xlsx');
+                }),
+        ];
+    }
+
+    protected function metaExport(): array
+    {
+        $cabangIds = $this->cabangIdsTerbatas($this->data['cabang_id'] ?? null);
+        $kelasId = $this->data['kelas_id'] ?? null;
+
+        return [
+            'bulan' => CarbonImmutable::parse($this->bulanTerpilih() . '-01')->locale('id')->translatedFormat('F Y'),
+            'cabang' => $cabangIds === null
+                ? 'Semua Cabang'
+                : Cabang::whereIn('id', $cabangIds)->orderBy('nama_cabang')->pluck('nama_cabang')->implode(', '),
+            'program' => $kelasId ? (Kelas::find($kelasId)?->nama_kelas ?? '-') : 'Semua Program',
+            'status' => match ($this->filterStatus) {
+                'aktif' => 'Aktif',
+                'tidak_aktif' => 'Tidak aktif',
+                default => 'Semua status',
+            },
+            'pencarian' => filled($this->cari) ? $this->cari : '-',
+        ];
     }
 }
