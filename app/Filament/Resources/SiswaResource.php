@@ -27,6 +27,8 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Hash;
+use App\Exports\SiswaFormulirExport;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 
 class SiswaResource extends Resource
 {
@@ -552,6 +554,13 @@ class SiswaResource extends Resource
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkAction::make('exportExcel')
+                    ->label('Export Excel')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->deselectRecordsAfterCompletion()
+                    ->action(fn (EloquentCollection $records) => SiswaFormulirExport::download($records)),
             ]);
     }
 
